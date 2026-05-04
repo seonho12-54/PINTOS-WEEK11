@@ -20,10 +20,12 @@
 #include "threads/vaddr.h"
 #include "userprog/gdt.h"
 #include "userprog/process.h"
+#include "threads/palloc.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
 
+static int sys_exec (const char *cmd_line); // 실행파일 선언
 static void sys_halt (void);
 static void sys_exit (int status);
 static bool sys_create (const char *file, unsigned initial_size);
@@ -46,6 +48,23 @@ static void validate_user_string (const char *str);
 #define MSR_STAR 0xc0000081
 #define MSR_LSTAR 0xc0000082
 #define MSR_SYSCALL_MASK 0xc0000084
+
+
+static int //시스템 실행 시스템 콜 핸들러에서 호출되는 sys_exec() 
+//함수를 구현한다.
+sys_exec (const char *cmd_line) {
+    validate_user_string (cmd_line);
+
+    char *cmd_copy = palloc_get_page (0);
+    if (cmd_copy == NULL)
+        return -1;
+
+    strlcpy (cmd_copy, cmd_line, PGSIZE);
+
+    return process_exec (cmd_copy);
+}
+
+
 
 void
 syscall_init (void) {

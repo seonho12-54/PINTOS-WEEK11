@@ -140,6 +140,7 @@ struct thread {
     struct list children;
     struct child_status *my_status;
     int exit_status;
+	struct file *running_file;
 #endif
 
 #ifdef VM

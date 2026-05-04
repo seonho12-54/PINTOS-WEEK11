@@ -501,6 +501,7 @@ init_thread (struct thread *t, const char *name, int priority) {
     for (int i = 0; i < ARG_MAX; i++) {
         t->fd_table[i] = NULL;
     }
+	t->running_file = NULL;
     list_init(&t->children);
     t->my_status = NULL;
     t->exit_status = 0;

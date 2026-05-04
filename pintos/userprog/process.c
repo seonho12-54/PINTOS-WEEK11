@@ -659,6 +659,13 @@ process_exit (void) {
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
 	
+
+	if (curr->running_file != NULL) {
+    file_close (curr->running_file);
+    curr->running_file = NULL;
+}	// 이걸 추가해야 프로세스가 끝날때 write 금지가 풀린다.
+
+
 	if (curr->my_status != NULL) {
 		curr->my_status->exit_status = curr->exit_status;
 		curr->my_status->exited = true;
@@ -879,8 +886,11 @@ load (const char *file_name, struct intr_frame *if_) {
 	success = true;
 
 done:
-	/* We arrive here whether the load is successful or not. */
-	file_close (file);
+    if (!success && file != NULL) {
+        if (t->running_file == file)
+            t->running_file = NULL;
+        file_close (file);
+    }
 	return success;
 }
 
