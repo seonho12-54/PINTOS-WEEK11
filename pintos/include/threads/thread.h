@@ -5,10 +5,11 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
+
 #ifdef VM
 #include "vm/vm.h"
 #endif
-#include "threads/synch.h"
 
 
 /* States in a thread's life cycle. */
@@ -19,37 +20,32 @@ enum thread_status {
 	THREAD_DYING        /* About to be destroyed. */
 };
 
-
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
-#define TID_ERROR ((tid_t) -1)
-        /* Error value for tid_t. */
-
-#ifndef ARG_MAX
-#define ARG_MAX 128
-#endif
-
-struct child_status {
-    tid_t tid;
-    int exit_status;
-    bool waited;
-    bool exited;
-
-	bool fork_success;
-    struct semaphore fork_sema;
-
-    struct semaphore wait_sema;
-    struct list_elem elem;
-};
-
-
+#define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
 /* Thread priorities. */
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+#define ARG_MAX 128
+
+struct file;
+
+struct child_status {
+	tid_t tid;                  // 자식 프로세스의 thread id를 저장한다.
+	int exit_status;            // 자식 프로세스가 종료할 때 남긴 exit status를 저장한다.
+	bool waited;                // 부모가 이 자식에 대해 wait을 이미 호출했는지 표시한다.
+	bool exited;                // 자식 프로세스가 종료되었는지 표시한다.
+	bool fork_success;          // fork 과정에서 자식 복사가 성공했는지 부모에게 알려준다.
+	struct semaphore fork_sema; // 부모가 자식의 fork 성공 여부를 기다릴 때 사용한다.
+	struct semaphore wait_sema; // 부모가 자식 종료를 기다릴 때 사용한다.
+	int ref_count;              // 부모와 자식이 공유하는 child_status의 참조 수를 센다.
+	struct lock ref_lock;       // ref_count 변경을 보호한다.
+	struct list_elem elem;      // 부모 thread의 children 리스트에 연결하기 위한 노드다.
+};
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The
@@ -133,15 +129,14 @@ struct thread {
 
 	// donation 리스트 등록 상태 추적 플래그(in_donation_list)를 둔다.
 	bool in_donation_list;
-#ifdef USERPROG
-    uint64_t *pml4;
-    struct file *fd_table[ARG_MAX];
-    int next_fd;
-    struct list children;
-    struct child_status *my_status;
-    int exit_status;
-	struct file *running_file;
-#endif
+
+	/* Owned by userprog/process.c. */
+	uint64_t *pml4;                     /* Page map level 4 */
+	struct file *fd_table[ARG_MAX];     // fd -> file.
+	struct list children;               // 자식 목록.
+	struct child_status *my_status;     // 내 종료 기록.
+	int exit_status;                    // 내 종료값.
+	struct file *running_file;          // 실행 파일.
 
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
@@ -152,7 +147,6 @@ struct thread {
 	struct intr_frame tf;               /* Information for switching */
 	unsigned magic;                     /* Detects stack overflow. */
 };
-
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -187,9 +181,6 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
-
-
-
 
 // synch.c에서 호출할 수 있도록 헤더에 프로토타입을 선언한다.
 void thread_recalculate_priority(struct thread *t);

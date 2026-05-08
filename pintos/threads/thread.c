@@ -13,6 +13,7 @@
 #include "intrinsic.h"
 #ifdef USERPROG
 #include "userprog/process.h"
+
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -167,7 +168,6 @@ thread_init (void) {
 	init_thread (initial_thread, "main", PRI_DEFAULT);
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid ();
-
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -256,7 +256,7 @@ thread_create (const char *name, int priority,
 	t->tf.ss = SEL_KDSEG;
 	t->tf.cs = SEL_KCSEG;
 	t->tf.eflags = FLAG_IF;
-
+	
 	/* Add to run queue. */
 	// 생성 경로에서 삽입 정책을 중복 구현하지 않고 thread_unblock()으로 위임한다.
 	thread_unblock (t);
@@ -489,26 +489,19 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->base_priority = priority;
 	t->effective_priority = priority;
 	t->wait_on_lock = NULL;
+
+	for (int i = 0; i < ARG_MAX; i++) {
+		t->fd_table[i] = NULL;
+	}
+	list_init (&t->children); // 이 thread가 만든 자식 process 기록들을 담을 리스트를 비워 둔다.
+	t->my_status = NULL; // 아직 부모의 children 리스트에 연결된 child_status가 없다는 뜻이다.
+	t->exit_status = 0; // 정상 종료 기본값으로 시작하고, sys_exit에서 실제 값으로 바뀐다.
+	t->running_file = NULL; // 아직 실행 파일을 load하지 않았으므로 deny-write 대상도 없다.
+
 	list_init(&t->donation_candidates); // donation 리스트를 초기화한다.
 	// in_donation_list를 false로 초기화한다.
-
-
-
 	t->in_donation_list = false;
-
-#ifdef USERPROG
-    t->next_fd = 2;
-    for (int i = 0; i < ARG_MAX; i++) {
-        t->fd_table[i] = NULL;
-    }
-	t->running_file = NULL; // 실행 중인 파일 포인터를 NULL로 초기화한다.
-    list_init(&t->children);
-    t->my_status = NULL;
-    t->exit_status = 0;
-#endif
 }
-
-
 
 /* Chooses and returns the next thread to be scheduled.  Should
    return a thread from the run queue, unless the run queue is
