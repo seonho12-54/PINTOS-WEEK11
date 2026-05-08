@@ -158,7 +158,7 @@ Windows PowerShell:
 두 스크립트 모두 `CODEX_HOME` 환경 변수가 설정되어 있으면 `$CODEX_HOME/skills`에 설치한다.
 설정되어 있지 않으면 기본 Codex 홈인 `~/.codex/skills`에 설치한다.
 
-### `gh-create-issue-branch`
+### SKILL 1: `gh-create-issue-branch`
 
 GitHub 이슈를 먼저 만들고, 그 이슈 번호에 맞는 브랜치까지 한 번에 만들고 싶을 때 사용한다.
 
@@ -194,7 +194,7 @@ feat-#12
 fix-#18
 ```
 
-### `gh-create-pr`
+### SKILL 2: `gh-create-pr`
 
 현재 작업이 `feat-#12`처럼 이슈 번호가 포함된 브랜치에 있고, 그 브랜치로 GitHub PR을 만들고 싶을 때 사용한다.
 
@@ -223,7 +223,7 @@ PR 본문은 `docs/rules.md`의 2번 PR 템플릿을 따른다.
 PR 본문 마지막에는 `Closes #<issue-number>`가 들어간다.
 이 문구가 있어야 PR이 머지될 때 연결된 이슈가 GitHub에서 자동으로 닫힌다.
 
-### `gh-review-pr`
+### SKILL 3: `gh-review-pr`
 
 Codex로 GitHub PR을 리뷰하고, 수정이 필요한 부분에 라인별 리뷰 코멘트를 남기고 싶을 때 사용한다.
 
