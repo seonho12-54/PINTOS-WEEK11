@@ -28,7 +28,7 @@ function Install-Skill {
     $SkillFile = Join-Path $SourceSkill "SKILL.md"
 
     if (-not (Test-Path -Path $SkillFile -PathType Leaf)) {
-        Write-Warning "Skipping $SkillName: missing SKILL.md"
+        Write-Warning "Skipping ${SkillName}: missing SKILL.md"
         return
     }
 
@@ -44,7 +44,7 @@ function Install-Skill {
     Get-ChildItem -Path $TargetSkill -File -Filter "*.pyc" -Recurse -ErrorAction SilentlyContinue |
         Remove-Item -Force -ErrorAction SilentlyContinue
 
-    Write-Host "Installed $SkillName -> $TargetSkill"
+    Write-Host "Installed ${SkillName} -> $TargetSkill"
 }
 
 Install-Skill "gh-create-issue-branch"
