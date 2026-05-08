@@ -1,13 +1,13 @@
 ---
 name: gh-create-pr
-description: "Create a polished Korean GitHub pull request from rough user notes, always ask for the PR title, PR description, and type prefix first, format the final PR title as feat: ..., assign it to the authenticated user, and include a Closes #123 footer derived from the current type-#123 branch. Use when the user wants to open a PR with gh after work is already on an issue-linked branch."
+description: "Create a polished Korean GitHub pull request from rough user notes, always ask for the PR title, PR description, type prefix, and whether it should be a draft PR first, format the final PR title as feat: ..., assign it to the authenticated user, and include a Closes #123 footer derived from the current type-#123 branch. Use when the user wants to open a PR with gh after work is already on an issue-linked branch."
 ---
 
 # Gh Create Pr
 
 ## Goal
 
-Turn rough PR notes into a clean Korean pull request, always collect the PR title, PR description, and type prefix first, format the final PR title as `<prefix>: <clean Korean title>`, make sure the current branch is pushed to `origin`, assign the PR to the authenticated user, and include a GitHub-closing footer like `Closes #4` based on the current branch name.
+Turn rough PR notes into a clean Korean pull request, always collect the PR title, PR description, type prefix, and whether the PR should be a draft first, format the final PR title as `<prefix>: <clean Korean title>`, make sure the current branch is pushed to `origin`, assign the PR to the authenticated user, and include a GitHub-closing footer like `Closes #4` based on the current branch name.
 
 ## Workflow Gate
 
@@ -19,10 +19,11 @@ Use this skill when the implementation work is already on an issue-linked branch
 
 ## Core Rules
 
-- Always ask the user for the PR title, PR description, and type prefix in normal chat before drafting the final PR. Do not assume `request_user_input` is available.
+- Always ask the user for the PR title, PR description, type prefix, and whether the PR should be a draft in normal chat before drafting the final PR. Do not assume `request_user_input` is available.
 - Ask for all required inputs in a single short message.
 - Write the PR title and body in Korean by default. If the user provides rough notes in English, translate them into natural Korean unless the user explicitly asks for another language.
 - Ask for a type prefix such as `feat`, `fix`, `bug`, `docs`, `refactor`, or `test`, and use that prefix at the start of the final PR title.
+- Ask whether to create the PR as a draft. If the user says yes, create a GitHub Draft Pull Request by passing `--draft` to the helper script. If the user leaves it blank, default to a normal ready-for-review PR.
 - Keep code identifiers, commands, API names, class names, and branch names unchanged when translating them would reduce precision.
 - Assign the PR to the authenticated GitHub user by default with `--assignee "@me"`. Only skip or change the assignee when the user explicitly asks for that.
 - Include `Closes #<issue-number>` in the PR body. Use `Closes`, not `closed`, so GitHub will close the linked issue automatically on merge.
@@ -36,6 +37,7 @@ Collect these inputs before creating the PR:
 - rough PR title
 - rough PR description
 - type prefix for the PR title, default `feat`
+- draft PR 여부, default `아니오`
 - optional base branch override
 - optional PR assignee override, default `@me`
 - optional issue number override when the current branch does not contain one
@@ -48,12 +50,13 @@ Always ask once with a compact template like:
 제목 초안:
 설명 초안:
 타입 prefix(기본값: feat):
+Draft PR 여부(기본값: 아니오):
 Base branch(선택):
 Assignee(기본값: @me):
 Issue 번호 override(현재 브랜치에서 못 찾을 때만):
 ```
 
-If the user already supplied free-form notes, still ask them to confirm the title, description, and prefix explicitly before creating the PR.
+If the user already supplied free-form notes, still ask them to confirm the title, description, prefix, and draft PR 여부 explicitly before creating the PR.
 
 ## Draft The Pull Request
 
@@ -114,6 +117,7 @@ python3 /path/to/gh-create-pr/scripts/create_pr_from_branch.py \
 ```
 
 If the user provides a base branch override, pass `--base <branch>`.
+If the user says this should be a draft PR, pass `--draft`.
 If the user explicitly does not want an assignee, pass `--no-assignee`.
 If the user explicitly wants a local-only branch, pass `--no-push`.
 
@@ -127,4 +131,4 @@ If the user explicitly wants a local-only branch, pass `--no-push`.
 
 ## Resources
 
-- `scripts/create_pr_from_branch.py`: Detect the current issue-linked branch, ensure a `Closes #<issue-number>` footer, push the branch to `origin`, and create a self-assigned PR with `gh`.
+- `scripts/create_pr_from_branch.py`: Detect the current issue-linked branch, ensure a `Closes #<issue-number>` footer, push the branch to `origin`, and create a self-assigned PR or Draft Pull Request with `gh`.
