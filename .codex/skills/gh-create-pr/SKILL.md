@@ -64,33 +64,50 @@ Rewrite the PR in Korean before creating it.
 
 - Make the title short, specific, and action-oriented in Korean.
 - Convert the final PR title to `<prefix>: <clean Korean title>`.
-- Prefer a body with stable Korean headings in this order: `요약`, `변경 사항`, `리뷰 포인트`, `테스트`, `비고`.
+- Prefer the repository PR template from `docs/rules.md` when drafting the PR body.
+- Use stable Korean headings in this order: `작업 요약`, `변경 내용`, `목표 테스트`, `테스트 결과`, `리뷰 포인트`, `체크리스트`.
 - Write the PR body as detailed as possible while staying accurate. Prefer reviewer-useful context over terse summaries.
-- In `요약`, explain the problem being solved, the implementation intent, and the main behavioral change.
-- In `변경 사항`, break down changes by subsystem, file group, or workflow. Include important implementation details, data flow, failure handling, and any dependency between changes.
+- In `작업 요약`, explain the problem being solved, the implementation intent, and the main behavioral change.
+- In `변경 내용`, break down changes by subsystem, file group, or workflow. Include important implementation details, data flow, failure handling, and any dependency between changes.
+- In `목표 테스트`, list the specific PintOS test commands the author intends to pass. Use unchecked checkboxes for tests not yet confirmed.
+- In `테스트 결과`, include the Markdown table from the team template and fill known results. If a test was not run, write `NOT RUN` instead of implying it passed.
 - In `리뷰 포인트`, explicitly list what reviewers should pay attention to, including invariants, edge cases, expected behavior, and areas where the author wants confirmation.
-- Keep the testing notes concrete and include commands, results, skipped tests, and environment limitations when known.
-- Move uncertainty into `비고` instead of presenting guesses as facts.
+- In `체크리스트`, preserve the team checklist items from `docs/rules.md` and mark only items that are explicitly verified.
+- Keep testing notes concrete and include commands, results, skipped tests, and environment limitations when known.
+- Do not add a `비고` section unless the user specifically provides extra notes that do not fit the team template.
 - Ensure the body ends with `Closes #<issue-number>`.
 
 Use this shape unless the repository already implies another format:
 
 ```md
-## 요약
+## 작업 요약
 ...
 
-## 변경 사항
+## 변경 내용
 ...
+
+## 목표 테스트
+
+- [ ] `make tests/vm/<test-name>.result`
+
+## 테스트 결과
+
+| 테스트 | 결과 |
+| --- | --- |
+| `<test-name>` | PASS |
 
 ## 리뷰 포인트
+
 - ...
 
-## 테스트
-- ...
-- ...
+## 체크리스트
 
-## 비고
-...
+- [ ] build 성공
+- [ ] 목표 테스트 통과
+- [ ] 관련 회귀 테스트 확인
+- [ ] debug print 제거
+- [ ] 테스트 이름 기반 하드코딩 없음
+- [ ] 복잡한 invariant는 주석 또는 문서에 설명
 
 Closes #4
 ```
