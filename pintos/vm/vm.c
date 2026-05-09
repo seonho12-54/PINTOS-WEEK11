@@ -85,15 +85,24 @@ spt_find_page (struct supplemental_page_table *spt, void *va) {
 
 /* Insert PAGE into spt with validation. */
 bool
-spt_insert_page (struct supplemental_page_table *spt UNUSED,
-		struct page *page UNUSED) {
-	int succ = false;
-	/* TODO: Fill this function. */
-
+spt_insert_page (struct supplemental_page_table *spt,
+		struct page *page) {
 	/* va가 존재하는지 확인
 	 * pg_round_down()으로 규칙 공유
-	 * 
+	 * 없으면 hash에 삽입하고 null pointer 반환(hash_insert)
+	 * 있으면 hash 수정하지 않고 element 반환(hash_insert)
+	 * 결과에 따라서 bool 값 반환(없어서 삽입했으면 false)
 	*/
+
+	bool succ = false;
+
+	page->va = pg_round_down(page->va);
+	struct hash_elem *e = hash_insert(&spt->pages, &page->hash_elem);
+
+	if (e == NULL) {
+		succ = true;
+	}
+
 	return succ;
 }
 
