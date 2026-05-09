@@ -69,10 +69,6 @@ err:
 struct page *
 spt_find_page (struct supplemental_page_table *spt, void *va) {
 	struct page *page = NULL;
-	/* 해시 테이블에서 va를 키로 페이지를 찾음
-	 * 있으면 해당 page를 반환하고,
-	 * 없으면 NULL 반환 
-	 */
 
 	struct page p;
 	struct hash_elem *e;
@@ -80,12 +76,11 @@ spt_find_page (struct supplemental_page_table *spt, void *va) {
 	p.va = pg_round_down(va);
 	e = hash_find(&spt->pages, &p.hash_elem);
 
-	struct page *ans = NULL;
 	if (e != NULL) {
-		ans = hash_entry(e, struct page, hash_elem);
+		page = hash_entry(e, struct page, hash_elem);
 	}
 
-	return ans;
+	return page;
 }
 
 /* Insert PAGE into spt with validation. */
@@ -95,6 +90,10 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 	int succ = false;
 	/* TODO: Fill this function. */
 
+	/* va가 존재하는지 확인
+	 * pg_round_down()으로 규칙 공유
+	 * 
+	*/
 	return succ;
 }
 
