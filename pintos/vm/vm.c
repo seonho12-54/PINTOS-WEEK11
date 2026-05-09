@@ -4,7 +4,7 @@
 #include "vm/vm.h"
 #include "vm/inspect.h"
 #include "hash.h"
-#include "vaddr.h"
+#include "threads/vaddr.h"
 
 static uint64_t page_hash (const struct hash_elem *e, void *aux);
 static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux);
@@ -260,7 +260,7 @@ supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	 * TODO: writeback all the modified contents to the storage. */
 }
 
-static uint64_t page_hash (const struct hash_elem *e, void *aux) {
+static uint64_t page_hash(const struct hash_elem *e, void *aux UNUSED) {
 	const struct page *page = hash_entry(e, struct page, hash_elem);
 
 	return hash_bytes(&page->va, sizeof page->va);
