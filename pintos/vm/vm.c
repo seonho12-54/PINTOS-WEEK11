@@ -4,9 +4,10 @@
 #include "vm/vm.h"
 #include "vm/inspect.h"
 #include "hash.h"
+#include "vaddr.h"
 
 static uint64_t page_hash (const struct hash_elem *e, void *aux);
-static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED);
+static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux);
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -66,11 +67,25 @@ err:
 
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *
-spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
+spt_find_page (struct supplemental_page_table *spt, void *va) {
 	struct page *page = NULL;
-	/* TODO: Fill this function. */
+	/* 해시 테이블에서 va를 키로 페이지를 찾음
+	 * 있으면 해당 page를 반환하고,
+	 * 없으면 NULL 반환 
+	 */
 
-	return page;
+	struct page p;
+	struct hash_elem *e;
+
+	p.va = pg_round_down(va);
+	e = hash_find(&spt->pages, &p.hash_elem);
+
+	struct page *ans = NULL;
+	if (e != NULL) {
+		ans = hash_entry(e, struct page, hash_elem);
+	}
+
+	return ans;
 }
 
 /* Insert PAGE into spt with validation. */
