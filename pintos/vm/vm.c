@@ -142,8 +142,13 @@ spt_insert_page (struct supplemental_page_table *spt,
 
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
+
+	/* 해시테이블에서 page 제거
+	 * page 해제 경로로 이어지게 만들기
+	*/
+
+	hash_delete(&spt->pages, &page->hash_elem);
 	vm_dealloc_page (page);
-	return true;
 }
 
 /* Get the struct frame, that will be evicted. */
@@ -234,10 +239,9 @@ vm_do_claim_page (struct page *page) {
 
 /* Initialize new supplemental page table */
 void
-supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+supplemental_page_table_init (struct supplemental_page_table *spt) {
 	/* 빈 해시테이블 생성(페이지 집합을 담을 용도) 
 	 * 한 프로세스 안에서 virtual page에는 한 struct page만 존재
-	 * 
 	*/
 	struct hash *pages = &spt->pages;
 	hash_init(pages, page_hash, page_less, NULL);
