@@ -126,8 +126,6 @@ vm_get_frame (void) {
     /* Eviction은 나중에 추가 구현 필요 */
     /* if frame_->kva == NULL {frame table 순회하면서 victim 정하고 eviction} */
   }
-  /* struct frame의 member인 page 초기화 */
-  frame_->page = NULL;
 
   ASSERT (frame_ != NULL);
   ASSERT (frame_->page == NULL);
