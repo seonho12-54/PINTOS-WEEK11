@@ -111,20 +111,27 @@ vm_evict_frame (void) {
  * space.*/
 static struct frame *
 vm_get_frame (void) {
-	struct frame *frame = NULL;
-	/* TODO: Fill this function. */
-	frame = palloc_get_page(PAL_USER);
+  struct frame *frame_ = NULL;
+  /* TODO: Fill this function. */
+  frame_ = calloc(sizeof(struct frame), 1);
+  if (frame_ == NULL) {
+    return NULL;
+  }
 
-	/* Eviction은 나중에 추가 구현 필요 */
-	/* if frame == NULL {frame table 순회하면서 victim 정하고 eviction */
+  frame_->kva = palloc_get_page(PAL_USER);
 
-	if (frame == NULL) {
-		PANIC ("todo");
-	}
+  if (frame_->kva == NULL) {
+    free(frame_);
+    PANIC ("todo");
+    /* Eviction은 나중에 추가 구현 필요 */
+    /* if frame_->kva == NULL {frame table 순회하면서 victim 정하고 eviction} */
+  }
+  /* struct frame의 member인 page 초기화 */
+  frame_->page = NULL;
 
-	ASSERT (frame != NULL);
-	ASSERT (frame->page == NULL);
-	return frame;
+  ASSERT (frame_ != NULL);
+  ASSERT (frame_->page == NULL);
+  return frame_;
 }
 
 /* Growing the stack. */
