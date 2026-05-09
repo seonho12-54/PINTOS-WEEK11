@@ -3,6 +3,7 @@
 #include "threads/malloc.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
+#include "hash.h"
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -174,6 +175,14 @@ vm_do_claim_page (struct page *page) {
 /* Initialize new supplemental page table */
 void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+	/* 빈 해시테이블 생성(페이지 집합을 담을 용도) 
+	 * 한 프로세스 안에서 virtual page에는 한 struct page만 존재
+	 * 
+	*/
+	struct hash pages = spt->pages;
+	hash_init(&pages, page_hash, page_less, NULL);
+
+	
 }
 
 /* Copy supplemental page table from src to dst */
@@ -187,4 +196,17 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+}
+
+static uint64_t page_hash (const struct hash_elem *e, void *aux) {
+	const struct page *page = hash_entry(e, struct page, hash_elem);
+
+	return hash_bytes(&page->va, sizeof page->va);
+}
+
+static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
+	const struct page *pa = hash_entry(a, struct page, hash_elem);
+	const struct page *pb = hash_entry(b, struct page, hash_elem);
+
+	return pa->va < pb->va;
 }
