@@ -112,6 +112,14 @@ static struct frame *
 vm_get_frame (void) {
 	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
+	frame = palloc_get_page(PAL_USER);
+
+	/* Eviction은 나중에 추가 구현 필요 */
+	/* if frame == NULL {frame table 순회하면서 victim 정하고 eviction */
+
+	if (frame == NULL) {
+		PANIC ("todo");
+	}
 
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
