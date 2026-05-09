@@ -5,6 +5,9 @@
 #include "vm/inspect.h"
 #include "hash.h"
 
+static uint64_t page_hash (const struct hash_elem *e, void *aux);
+static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED);
+
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void
@@ -179,10 +182,8 @@ supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 	 * 한 프로세스 안에서 virtual page에는 한 struct page만 존재
 	 * 
 	*/
-	struct hash pages = spt->pages;
-	hash_init(&pages, page_hash, page_less, NULL);
-
-	
+	struct hash *pages = &spt->pages;
+	hash_init(pages, page_hash, page_less, NULL);
 }
 
 /* Copy supplemental page table from src to dst */
