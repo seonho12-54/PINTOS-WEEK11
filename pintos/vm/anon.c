@@ -31,15 +31,12 @@ vm_anon_init (void) {
 bool
 anon_initializer (struct page *page, enum vm_type type, void *kva) { //페이지와 타입과 커널가상주소를 입력으로 받음.
 	/* Set up the handler */
-	page->operations = &anon_ops;
-
-	 
-
+	page->operations = &anon_ops; //페이지의 오퍼레이션을 초기화합니다.
 
 	struct anon_page *anon_page = &page->anon;
 
 
-	
+
 	return true; //일단 성공하면 투르를 반환하도록 해봅시다.
 }
 
