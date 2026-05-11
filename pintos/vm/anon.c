@@ -27,17 +27,14 @@ vm_anon_init (void) {
 	swap_disk = NULL;
 }
 
-/* Initialize the file mapping */
+/* 익명 페이지 초기화에 필요한 연산 테이블을 연결한다. */
 bool
-anon_initializer (struct page *page, enum vm_type type, void *kva) { //페이지와 타입과 커널가상주소를 입력으로 받음.
-	/* Set up the handler */
-	page->operations = &anon_ops; //페이지의 오퍼레이션을 초기화합니다.
+anon_initializer (struct page *page, enum vm_type type, void *kva) {
+	/* 이후 fault 처리에서 anon 연산 테이블을 사용한다. */
+	page->operations = &anon_ops;
 
 	struct anon_page *anon_page = &page->anon;
-
-
-
-	return true; //일단 성공하면 투르를 반환하도록 해봅시다.
+	return true;
 }
 
 /* Swap in the page by read contents from the swap disk. */

@@ -48,6 +48,7 @@ struct initd_args {
 	struct child_status *child_status;
 };
 
+/* 지연 로딩 시 페이지 초기화에 필요한 파일 정보 묶음. */
 struct lazy_load_args {
 	off_t ofs;
 	struct file *file;
@@ -1120,7 +1121,7 @@ static bool install_page (void *upage, void *kpage, bool writable);
  * 디스크 읽기 오류가 발생하면 false를 반환합니다. */
 
 
-static bool //로드 세그먼트 발견
+static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
 	ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
@@ -1209,9 +1210,7 @@ install_page (void *upage, void *kpage, bool writable) {
 
 static bool
 lazy_load_segment (struct page *page, void *aux) {
-	/* TODO: Load the segment from the file */
-	/* TODO: This called when the first page fault occurs on address VA. */
-	/* TODO: VA is available when calling this function. */
+	/* 첫 page fault 시 파일 내용을 프레임에 채운다. */
 	if(page == NULL || page->frame == NULL) {
 		return false;
 	}
@@ -1231,25 +1230,22 @@ lazy_load_segment (struct page *page, void *aux) {
 		return false;
 	} 
 	
-	memset((uint8_t *) (page->frame->kva) + read_bytes_, 0, zero_bytes_); // 나머지 0으로 초기화
+	/* 파일에서 읽지 않은 나머지 바이트는 0으로 채운다. */
+	memset((uint8_t *) (page->frame->kva) + read_bytes_, 0, zero_bytes_);
 	free(lazy_load_args_);
 	return true;
 }
 
-/* Loads a segment starting at offset OFS in FILE at address
- * UPAGE.  In total, READ_BYTES + ZERO_BYTES bytes of virtual
- * memory are initialized, as follows:
+/* FILE의 오프셋 OFS 지점부터 시작하는 세그먼트를 주소
+ * UPAGE에 지연 로딩 형태로 등록한다. 총 READ_BYTES + ZERO_BYTES
+ * 바이트의 가상 메모리는 다음 규칙을 따른다:
  *
- * - READ_BYTES bytes at UPAGE must be read from FILE
- * starting at offset OFS.
+ * - UPAGE의 READ_BYTES 바이트는 FILE의 OFS부터 읽는다.
+ * - UPAGE + READ_BYTES부터 ZERO_BYTES 바이트는 0으로 채운다.
+ * - WRITABLE이 true면 쓰기 가능, 아니면 읽기 전용 페이지로 둔다.
  *
- * - ZERO_BYTES bytes at UPAGE + READ_BYTES must be zeroed.
- *
- * The pages initialized by this function must be writable by the
- * user process if WRITABLE is true, read-only otherwise.
- *
- * Return true if successful, false if a memory allocation error
- * or disk read error occurs. */
+ * 준비에 성공하면 true를 반환하고, 메모리 할당이나 디스크 읽기에
+ * 실패하면 false를 반환한다. */
 static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
@@ -1269,7 +1265,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-		/* TODO: Set up aux to pass information to the lazy_load_segment. */
+		/* 첫 fault 때 필요한 파일 정보를 aux에 담아 둔다. */
 		lazy_load_args_->file = file;
 		lazy_load_args_->ofs = ofs;
 		lazy_load_args_->read_bytes = page_read_bytes;
@@ -1293,22 +1289,19 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 	return true;
 }
 
-/* Create a PAGE of stack at the USER_STACK. Return true on success. */
+/* USER_STACK 바로 아래에 첫 스택 페이지를 만들고 성공 여부를 반환한다. */
 static bool
 setup_stack (struct intr_frame *if_) {
 	void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
 	
-	/* TODO: Map the stack on stack_bottom and claim the page immediately.
-	 * TODO: If success, set the rsp accordingly.
-	 * TODO: You should mark the page is stack. */
-	/* TODO: Your code goes here */
+	/* 초기 스택은 fault를 기다리지 않고 바로 확보한다. */
 	if(!vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, true)) { 
 		return false;
 	}
 	
 	if(!vm_claim_page(stack_bottom)) {
 		return false;
-	} // 즉시 claim
+	}
 
 	if_->rsp = USER_STACK;
 	return true;

@@ -55,36 +55,22 @@ uninit_initialize (struct page *page, void *kva) {
 		(init ? init (page, aux) : true);
 }
 
-/* Free the resources hold by uninit_page. Although most of pages are transmuted
- * to other page objects, it is possible to have uninit pages when the process
- * exit, which are never referenced during the execution.
- * PAGE will be freed by the caller. */
+/* uninit_page가 들고 있던 자원을 정리한다.
+ * 대부분의 페이지는 다른 타입으로 바뀌지만, 한 번도 접근되지 않은
+ * uninit 페이지가 종료 시점까지 남을 수 있다.
+ * PAGE 자체는 호출자가 해제한다. */
 static void
 uninit_destroy (struct page *page) {
 
 
 	struct uninit_page *uninit = &page->uninit; 
 
-	/*
-	여기서 해야할 것 1번째
-	uninit 페이지가 가지고 있는 자원을 해제하는 함수입니다. 
-	uninit 페이지는 초기화되지 않은 페이지이므로, 초기화 과정에서 할당된 자원이 있을 수 있습니다. 
-	예를 들어, uninit 페이지가 초기화될 때 할당된 메모리나 파일 핸들이 있을 수 있습니다. 
-	이러한 자원을 해제하기 위해서는 uninit 페이지의 구조체 멤버를 확인하고, 
-	필요한 경우 해당 자원을 해제해야 합니다.
-	*/
+	/* 초기화되지 않은 채 종료되는 페이지도 있으므로 aux가 남아 있으면 정리한다. */
 
 	if(uninit !=NULL && uninit->aux != NULL){
 		free(uninit->aux);
 	}
-
-	//언이닛이 페이지 안에 있는 구조체 멤버를 프리해야지
-
-
-
-
-	/* TODO: Fill this function.
-	 * TODO: If you don't have anything to do, just return. */
+	/* TODO: 추가로 정리할 자원이 없다면 그대로 반환한다. */
 
 
 

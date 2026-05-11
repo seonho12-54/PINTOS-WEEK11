@@ -45,7 +45,7 @@ struct page {
 	const struct page_operations *operations;
 	void *va;              /* Address in terms of user space */
 	struct frame *frame;   /* Back reference for frame */
-	bool writable;        /* True if writable */
+	bool writable;         /* 사용자 쓰기 허용 여부 */
 	/* Your implementation */
 
 	/* Per-type data are binded into the union.
@@ -59,7 +59,7 @@ struct page {
 #endif
 	};
 
-	struct hash_elem hash_elem;
+	struct hash_elem hash_elem; /* SPT 해시 연결용 원소 */
 };
 
 /* The representation of "frame" */
@@ -88,7 +88,7 @@ struct page_operations {
  * We don't want to force you to obey any specific design for this struct.
  * All designs up to you for this. */
 struct supplemental_page_table {
-	struct hash pages;
+	struct hash pages;          /* 가상 페이지를 저장하는 해시 */
 };
 
 #include "threads/thread.h"

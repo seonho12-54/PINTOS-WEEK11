@@ -7,9 +7,9 @@
 
 struct inode;
 struct file {
-	struct inode *inode;        /* File's inode. */
-	off_t pos;                  /* Current position. */
-	bool deny_write;            /* Has file_deny_write() been called? */
+	struct inode *inode;        /* 파일이 가리키는 inode */
+	off_t pos;                  /* 현재 파일 오프셋 */
+	bool deny_write;            /* 쓰기 금지 상태 */
 };
 /* Opening and closing files. */
 struct file *file_open (struct inode *);
