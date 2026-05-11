@@ -115,14 +115,14 @@ vm_get_frame (void) {
   /* TODO: Fill this function. */
   frame_ = calloc(sizeof(struct frame), 1);
   if (frame_ == NULL) {
-    return NULL;
+    PANIC ("calloc() fail: kernel heap shortage");
   }
 
   frame_->kva = palloc_get_page(PAL_USER);
 
   if (frame_->kva == NULL) {
     free(frame_);
-    PANIC ("todo");
+    PANIC ("todo: eviction");
     /* Eviction은 나중에 추가 구현 필요 */
     /* if frame_->kva == NULL {frame table 순회하면서 victim 정하고 eviction} */
   }
