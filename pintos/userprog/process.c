@@ -1104,21 +1104,23 @@ validate_segment (const struct Phdr *phdr, struct file *file) {
 /* load() helpers. */
 static bool install_page (void *upage, void *kpage, bool writable);
 
-/* Loads a segment starting at offset OFS in FILE at address
- * UPAGE.  In total, READ_BYTES + ZERO_BYTES bytes of virtual
- * memory are initialized, as follows:
+/* FILE의 오프셋 OFS 지점부터 시작하는 세그먼트를 주소
+ * UPAGE에 로드합니다. 총 READ_BYTES + ZERO_BYTES 바이트의 가상
+ * 메모리가 다음과 같이 초기화됩니다:
  *
- * - READ_BYTES bytes at UPAGE must be read from FILE
- * starting at offset OFS.
+ * - UPAGE의 READ_BYTES 바이트는 FILE의 오프셋 OFS 지점부터
+ * 읽어들여야 합니다.
  *
- * - ZERO_BYTES bytes at UPAGE + READ_BYTES must be zeroed.
+ * - UPAGE + READ_BYTES 위치의 ZERO_BYTES 바이트는 0으로 초기화되어야 합니다.
  *
- * The pages initialized by this function must be writable by the
- * user process if WRITABLE is true, read-only otherwise.
+ * WRITABLE이 true인 경우 이 함수에 의해 초기화된 페이지는
+ * 사용자 프로세스가 쓰기 가능해야 하며, 그렇지 않은 경우 읽기 전용이어야 합니다.
  *
- * Return true if successful, false if a memory allocation error
- * or disk read error occurs. */
-static bool
+ * 성공하면 true를 반환하고, 메모리 할당 오류나
+ * 디스크 읽기 오류가 발생하면 false를 반환합니다. */
+
+
+static bool //로드 세그먼트 발견
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
 	ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
@@ -1159,6 +1161,11 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 	}
 	return true;
 }
+
+
+
+
+
 
 /* Create a minimal stack by mapping a zeroed page at the USER_STACK */
 static bool

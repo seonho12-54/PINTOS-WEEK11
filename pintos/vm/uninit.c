@@ -24,8 +24,7 @@ static const struct page_operations uninit_ops = {
 
 /* DO NOT MODIFY this function */
 void
-uninit_new (struct page *page, void *va, vm_initializer *init,
-		enum vm_type type, void *aux,
+uninit_new (struct page *page, void *va, vm_initializer *init, enum vm_type type, void *aux,
 		bool (*initializer)(struct page *, enum vm_type, void *)) {
 	ASSERT (page != NULL);
 
@@ -62,7 +61,31 @@ uninit_initialize (struct page *page, void *kva) {
  * PAGE will be freed by the caller. */
 static void
 uninit_destroy (struct page *page) {
-	struct uninit_page *uninit UNUSED = &page->uninit;
+
+
+	struct uninit_page *uninit = &page->uninit; 
+
+	/*
+	여기서 해야할 것 1번째
+	uninit 페이지가 가지고 있는 자원을 해제하는 함수입니다. 
+	uninit 페이지는 초기화되지 않은 페이지이므로, 초기화 과정에서 할당된 자원이 있을 수 있습니다. 
+	예를 들어, uninit 페이지가 초기화될 때 할당된 메모리나 파일 핸들이 있을 수 있습니다. 
+	이러한 자원을 해제하기 위해서는 uninit 페이지의 구조체 멤버를 확인하고, 
+	필요한 경우 해당 자원을 해제해야 합니다.
+	*/
+
+	if(uninit !=NULL && uninit->aux != NULL){
+		free(uninit->aux);
+	}
+
+	//언이닛이 페이지 안에 있는 구조체 멤버를 프리해야지
+
+
+
+
 	/* TODO: Fill this function.
 	 * TODO: If you don't have anything to do, just return. */
+
+
+
 }
