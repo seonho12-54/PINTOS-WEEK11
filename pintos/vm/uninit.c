@@ -65,8 +65,14 @@ uninit_destroy (struct page *page) {
 
 	struct uninit_page *uninit UNUSED = &page->uninit; //uninit 페이지가 가지고 있는 자원을 해제하는 함수입니다. 
 	//spt에 등록된거를 이제 폴트 나서 다른거를 호출해서 타입을 바꿔야해서 기존에 등록된 아무것도 아닌 uninit을 해제하는 함수입니다.
-	
-	
+
+	//만약에 init이 존재한다면 init이 가지고 있는 자원을 해제하는 작업을 해야할 수도 있습니다.
+	if(uninit->init != NULL){
+		uninit->init(page, uninit->aux); //만약 init이 존재한다면 init이 가지고 있는 자원을 해제하는 작업을 해야할 수도 있습니다.
+		free(uninit->init); //그리고 언이닛 돼 있는걸 init으로 바꿔야합니다.
+	}
+
+
 	/* TODO: Fill this function.
 	 * TODO: If you don't have anything to do, just return. */
 
