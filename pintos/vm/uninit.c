@@ -24,8 +24,7 @@ static const struct page_operations uninit_ops = {
 
 /* DO NOT MODIFY this function */
 void
-uninit_new (struct page *page, void *va, vm_initializer *init,
-		enum vm_type type, void *aux,
+uninit_new (struct page *page, void *va, vm_initializer *init, enum vm_type type, void *aux,
 		bool (*initializer)(struct page *, enum vm_type, void *)) {
 	ASSERT (page != NULL);
 
@@ -62,7 +61,16 @@ uninit_initialize (struct page *page, void *kva) {
  * PAGE will be freed by the caller. */
 static void
 uninit_destroy (struct page *page) {
-	struct uninit_page *uninit UNUSED = &page->uninit;
+
+
+	struct uninit_page *uninit UNUSED = &page->uninit; //uninit 페이지가 가지고 있는 자원을 해제하는 함수입니다. 
+	
+	
 	/* TODO: Fill this function.
 	 * TODO: If you don't have anything to do, just return. */
+
+
+
+
+
 }

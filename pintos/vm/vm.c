@@ -37,28 +37,57 @@ static struct frame *vm_get_victim (void);
 static bool vm_do_claim_page (struct page *page);
 static struct frame *vm_evict_frame (void);
 
-/* Create the pending page object with initializer. If you want to create a
- * page, do not create it directly and make it through this function or
- * `vm_alloc_page`. */
+/* 초기화기를 사용하여 대기 중인 페이지 객체를 생성합니다. 페이지를 생성하려면
+ * 직접 생성하지 말고 이 함수나
+ * `vm_alloc_page`를 통해 생성하십시오. */
 bool
 vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		vm_initializer *init, void *aux) {
 
-	ASSERT (VM_TYPE(type) != VM_UNINIT)
+	ASSERT (VM_TYPE(type) != VM_UNINIT) //VM은 초기화 되지 않은 유닛이므로 초기화기를 이용하
+										//여 페이지 객체를 생성할때는 VM_UNINIT이 아니어야 한다.
+								
+	struct supplemental_page_table *spt = &thread_current ()->spt; //현재 스레드의 보조 페이지 테이블을 가져옵니다.
 
-	struct supplemental_page_table *spt = &thread_current ()->spt;
+/* 해당 페이지가 이미 할당되었는지 확인합니다. */
+    if (spt_find_page (spt, upage) == NULL) {
 
-	/* Check wheter the upage is already occupied or not. */
-	if (spt_find_page (spt, upage) == NULL) {
-		/* TODO: Create the page, fetch the initialier according to the VM type,
-		 * TODO: and then create "uninit" page struct by calling uninit_new. You
-		 * TODO: should modify the field after calling the uninit_new. */
 
-		/* TODO: Insert the page into the spt. */
+		/* TODO: 페이지를 생성하고, VM 유형에 따라 초기화기를 가져온 다음,
+	
+         * TODO: uninit_new를 호출하여 “uninit” 페이지 구조체를 생성합니다.
+		 
+         * TODO: uninit_new 호출 후 해당 필드를 수정해야 합니다. */
+
+        /* TODO: 페이지를 spt에 삽입합니다. */
+		struct page *page = malloc(sizeof(struct page)); // 일단 페이지 메타데이터를 만듭니다.
+
+		if (page == NULL) //만약 에러뜨면 goto 하는거여
+			goto err;
+		
+		uninit_new(page, upage, init, type, aux, NULL); //uninit_new를 호출하여 “uninit” 페이지 구조체를 생성합니다.
+		
+
+		
+		/*
+		supplemental_page_table_init(spt); //보조 페이지 테이블을 초기화합니다.
+		*/
+		
+		if ( spt_insert_page(spt, page) ==false){ //페이지를 spt에 삽입합니다.
+			goto err; 
+		}
+
+
+		return true;
+
 	}
 err:
 	return false;
 }
+
+
+
+
 
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *
@@ -174,6 +203,7 @@ vm_do_claim_page (struct page *page) {
 /* Initialize new supplemental page table */
 void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+
 }
 
 /* Copy supplemental page table from src to dst */
