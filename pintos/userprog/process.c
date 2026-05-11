@@ -1205,19 +1205,26 @@ lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
+	if(page == NULL || page->frame == NULL) {
+		return false;
+	}
+
 	struct lazy_load_args *lazy_load_args_ = (struct lazy_load_args*) aux;
 	if(lazy_load_args_ == NULL) {
 		return false;
 	}
 
 	struct file *file_ = lazy_load_args_->file;
-	file_->pos = lazy_load_args_->ofs;
+	file_seek(file_, lazy_load_args_->ofs);
 	void * kva_ = page->frame->kva;
 	off_t read_bytes_ =  lazy_load_args_->read_bytes;
+	off_t zero_bytes_ = lazy_load_args_->zero_bytes;
 	if(read_bytes_ != file_read(file_, kva_, read_bytes_)) {
+		free(lazy_load_args_);
 		return false;
 	} 
-	// frame 만들 떄 calloc으로 0으로 초기화 했기 때문에 read_byte만큼 frame에 채우고 zero_byte만큼 채우지 않아도 괜찮다?
+	
+	memset((uint8_t *) (page->frame->kva) + read_bytes_, 0, zero_bytes_); // 나머지 0으로 초기화
 	free(lazy_load_args_);
 	return true;
 }
