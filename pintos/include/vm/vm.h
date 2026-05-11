@@ -60,7 +60,6 @@ struct page {
 	};
 
 	struct hash_elem hash_elem;
-	bool writable;
 };
 
 /* The representation of "frame" */
