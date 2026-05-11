@@ -66,41 +66,42 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
          * TODO: uninit_new 호출 후 해당 필드를 수정해야 합니다. */
 
         /* TODO: 페이지를 spt에 삽입합니다. */
-		struct page *page = malloc(sizeof(struct page)); // 일단 페이지 메타데이터를 만듭니다.
+		struct page *page_ = malloc(sizeof(struct page)); // 일단 페이지 메타데이터를 만듭니다.
 
-		if (page == NULL) //만약 에러뜨면 goto 하는거여
-			free(page);//에러가 뜨면 프리를 해버리는겨
+		if (page_ == NULL) //만약 에러뜨면 goto 하는거여
 			goto err;
 		
+		int ty = VM_TYPE(type);
 
-		switch (type) {
+		switch (ty) {
 					case VM_ANON: {
-						uninit_new(page, upage, init, type, aux, anon_initializer);
+
+						uninit_new(page_, upage, init, type, aux, anon_initializer);
+						
 						break;
 					}
 					case VM_FILE: {
-						uninit_new(page, upage, init, type, aux, file_backed_initializer);
+						uninit_new(page_, upage, init, type, aux, file_backed_initializer);
 						break;
 					}
 					default:
-						free(page);
+						free(page_);
 						goto err;
 				}		
 
+
+				
 		//페이지 구조체 밑에 bool writable을 바꾸어 줘야합니다. 
-		page ->writable = writable; //페이지의 쓰기 가능 여부를 설정합니다.
-			//writable이 참이면 VM_MARKER_0을 설정하고, 그렇지 않으면 0으로 설정합니다.
-			
-		//writable = writable ? VM_MARKER_0 : 0;
+		page_ ->writable = writable; //페이지의 쓰기 가능 여부를 설정합니다.
 
 		
 		/*
 		supplemental_page_table_init(spt); //보조 페이지 테이블을 초기화합니다.
 		*/
 		
-		if ( spt_insert_page(spt, page) ==false){ //페이지를 spt에 삽입합니다.
-			free (page);
-			goto err; 
+		if ( spt_insert_page(spt, page_) == false){ //페이지를 spt에 삽입합니다.
+			free (page_);
+			return false;
 		}
 
 
