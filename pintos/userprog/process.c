@@ -1219,6 +1219,7 @@ lazy_load_segment (struct page *page, void *aux) {
 	} 
 	// frame 만들 떄 calloc으로 0으로 초기화 했기 때문에 read_byte만큼 frame에 채우고 zero_byte만큼 채우지 않아도 괜찮다?
 	free(lazy_load_args_);
+	return true;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -1241,20 +1242,20 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 	ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
 	ASSERT (pg_ofs (upage) == 0);
 	ASSERT (ofs % PGSIZE == 0);
-	struct lazy_load_args *lazy_load_args_ = malloc(sizeof(struct lazy_load_args));
 
 	while (read_bytes > 0 || zero_bytes > 0) {
 		/* Do calculate how to fill this page.
 		 * We will read PAGE_READ_BYTES bytes from FILE
 		 * and zero the final PAGE_ZERO_BYTES bytes. */
+		struct lazy_load_args *lazy_load_args_ = malloc(sizeof(struct lazy_load_args));
 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
 		lazy_load_args_->file = file;
 		lazy_load_args_->ofs = ofs;
-		lazy_load_args_->read_bytes = read_bytes;
-		lazy_load_args_->zero_bytes = zero_bytes;
+		lazy_load_args_->read_bytes = page_read_bytes;
+		lazy_load_args_->zero_bytes = page_zero_bytes;
 		lazy_load_args_->writable = writable;
 
 		
