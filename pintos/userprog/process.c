@@ -1254,7 +1254,11 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		/* Do calculate how to fill this page.
 		 * We will read PAGE_READ_BYTES bytes from FILE
 		 * and zero the final PAGE_ZERO_BYTES bytes. */
-		struct lazy_load_args *lazy_load_args_ = malloc(sizeof(struct lazy_load_args));
+		struct lazy_load_args *lazy_load_args_ = NULL;
+		lazy_load_args_ = malloc(sizeof(struct lazy_load_args));
+		if(lazy_load_args_ == NULL) {
+			return false;
+		}
 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
@@ -1267,9 +1271,11 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 		
 		void *aux = lazy_load_args_;
-		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-					writable, lazy_load_segment, aux))
-			return false;
+		if (!vm_alloc_page_with_initializer (VM_ANON, upage, writable, lazy_load_segment, aux)) {
+				free(aux);
+				return false;
+			}
+			
 		
 		/* Advance. */
 		read_bytes -= page_read_bytes;
