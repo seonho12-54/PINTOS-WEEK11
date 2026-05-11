@@ -3,6 +3,12 @@
 #include "threads/malloc.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
+#include "threads/mmu.h"
+#include "hash.h"
+#include "threads/vaddr.h"
+
+static uint64_t page_hash (const struct hash_elem *e, void *aux);
+static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux);
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -111,27 +117,54 @@ err:
 
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *
-spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
+spt_find_page (struct supplemental_page_table *spt, void *va) {
 	struct page *page = NULL;
-	/* TODO: Fill this function. */
+
+	struct page p;
+	struct hash_elem *e;
+
+	p.va = pg_round_down(va);
+	e = hash_find(&spt->pages, &p.hash_elem);
+
+	if (e != NULL) {
+		page = hash_entry(e, struct page, hash_elem);
+	}
 
 	return page;
 }
 
 /* Insert PAGE into spt with validation. */
 bool
-spt_insert_page (struct supplemental_page_table *spt UNUSED,
-		struct page *page UNUSED) {
-	int succ = false;
-	/* TODO: Fill this function. */
+spt_insert_page (struct supplemental_page_table *spt,
+		struct page *page) {
+	/* va가 존재하는지 확인
+	 * pg_round_down()으로 규칙 공유
+	 * 없으면 hash에 삽입하고 null pointer 반환(hash_insert)
+	 * 있으면 hash 수정하지 않고 element 반환(hash_insert)
+	 * 결과에 따라서 bool 값 반환(없어서 삽입했으면 false)
+	*/
+
+	bool succ = false;
+
+	page->va = pg_round_down(page->va);
+	struct hash_elem *e = hash_insert(&spt->pages, &page->hash_elem);
+
+	if (e == NULL) {
+		succ = true;
+	}
 
 	return succ;
 }
 
 void
 spt_remove_page (struct supplemental_page_table *spt, struct page *page) {
+
+	/* 해시테이블에서 page 제거
+	 * page 해제 경로로 이어지게 만들기
+	*/
+
+	hash_delete(&spt->pages, &page->hash_elem);
 	vm_dealloc_page (page);
-	return true;
 }
 
 /* Get the struct frame, that will be evicted. */
@@ -159,12 +192,25 @@ vm_evict_frame (void) {
  * space.*/
 static struct frame *
 vm_get_frame (void) {
-	struct frame *frame = NULL;
-	/* TODO: Fill this function. */
+  struct frame *frame_ = NULL;
+  /* TODO: Fill this function. */
+  frame_ = calloc(sizeof(struct frame), 1);
+  if (frame_ == NULL) {
+    PANIC ("calloc() fail: kernel heap shortage");
+  }
 
-	ASSERT (frame != NULL);
-	ASSERT (frame->page == NULL);
-	return frame;
+  frame_->kva = palloc_get_page(PAL_USER);
+
+  if (frame_->kva == NULL) {
+    free(frame_);
+    PANIC ("todo: eviction");
+    /* Eviction은 나중에 추가 구현 필요 */
+    /* if frame_->kva == NULL {frame table 순회하면서 victim 정하고 eviction} */
+  }
+
+  ASSERT (frame_ != NULL);
+  ASSERT (frame_->page == NULL);
+  return frame_;
 }
 
 /* Growing the stack. */
@@ -179,13 +225,28 @@ vm_handle_wp (struct page *page UNUSED) {
 
 /* Return true on success */
 bool
-vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
-		bool user UNUSED, bool write UNUSED, bool not_present UNUSED) {
-	struct supplemental_page_table *spt UNUSED = &thread_current ()->spt;
+vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
+		bool user , bool write , bool not_present ) {
+	struct supplemental_page_table *spt = &thread_current ()->spt;
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
-	/* TODO: Your code goes here */
+	if(addr == NULL || is_kernel_vaddr(addr)) { // fault가 난 가상주소가 NULL 이거나 kernel 영역이면 거절
+		return false;
+	}
 
+	if(!not_present) { // 유효한 오류가 아님
+		return false;
+	}
+
+	/* TODO: Your code goes here */
+	page = spt_find_page(spt, pg_round_down(addr));
+	if(page == NULL) {
+		return false;
+	}
+
+	if(write && !page->writable) { // 쓰기 권한이 없는데 쓰려고 하는 경우 
+		return false;
+	}
 	return vm_do_claim_page (page);
 }
 
@@ -200,30 +261,56 @@ vm_dealloc_page (struct page *page) {
 /* Claim the page that allocate on VA. */
 bool
 vm_claim_page (void *va UNUSED) {
-	struct page *page = NULL;
-	/* TODO: Fill this function */
-
-	return vm_do_claim_page (page);
+  struct page *page_ = NULL;
+  /* TODO: Fill this function */
+  page_ = spt_find_page (&(thread_current ()->spt), va);
+  if (page_ != NULL) {
+    return vm_do_claim_page (page_);
+  }
+  else {
+    PANIC ("todo"); // stack growth 조건 만족하는지 이후 추가 구현 필요
+  }
 }
 
 /* Claim the PAGE and set up the mmu. */
 static bool
-vm_do_claim_page (struct page *page) {
-	struct frame *frame = vm_get_frame ();
-
+vm_do_claim_page (struct page *page_) {
+	struct frame *frame_ = vm_get_frame ();
+	bool is_claimed = false;
 	/* Set links */
-	frame->page = page;
-	page->frame = frame;
-
+	frame_->page = page_;
+	page_->frame = frame_;
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+	is_claimed = pml4_set_page (thread_current ()->pml4, page_->va, frame_->kva, page_->writable);
 
-	return swap_in (page, frame->kva);
+	if (is_claimed) {
+		if (swap_in (page_, frame_->kva)) {
+			return true;
+		}
+		goto cleanup;
+	}
+	cleanup:
+		/* Link 초기화 */
+		frame_->page = NULL;
+		page_->frame = NULL;
+		/* is_swapped_in 에서 실패했을 경우 mapping 제거 */
+		if (is_claimed) {
+			pml4_clear_page (thread_current ()->pml4, page_->va);
+		}
+		/* frame KVA 반환 */
+		palloc_free_page (frame_->kva);
+		free (frame_);
+		return false;
 }
 
 /* Initialize new supplemental page table */
 void
-supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
-
+supplemental_page_table_init (struct supplemental_page_table *spt) {
+	/* 빈 해시테이블 생성(페이지 집합을 담을 용도) 
+	 * 한 프로세스 안에서 virtual page에는 한 struct page만 존재
+	*/
+	struct hash *pages = &spt->pages;
+	hash_init(pages, page_hash, page_less, NULL);
 }
 
 /* Copy supplemental page table from src to dst */
@@ -237,4 +324,17 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+}
+
+static uint64_t page_hash(const struct hash_elem *e, void *aux UNUSED) {
+	const struct page *page = hash_entry(e, struct page, hash_elem);
+
+	return hash_bytes(&page->va, sizeof page->va);
+}
+
+static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
+	const struct page *pa = hash_entry(a, struct page, hash_elem);
+	const struct page *pb = hash_entry(b, struct page, hash_elem);
+
+	return pa->va < pb->va;
 }
