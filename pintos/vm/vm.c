@@ -67,6 +67,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		
 		uninit_new(page, upage, init, type, aux, NULL); //uninit_new를 호출하여 “uninit” 페이지 구조체를 생성합니다.
 		
+		writable = writable ? VM_MARKER_0 : 0;
 
 		
 		/*
