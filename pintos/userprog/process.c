@@ -30,6 +30,7 @@ static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
 
+
 struct fork_args {
 	struct thread *parent;
 	struct child_status *child_status;
@@ -1204,7 +1205,20 @@ lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
 	/* TODO: VA is available when calling this function. */
-	
+	struct lazy_load_args *lazy_load_args_ = (struct lazy_load_args*) aux;
+	if(lazy_load_args_ == NULL) {
+		return false;
+	}
+
+	struct file *file_ = lazy_load_args_->file;
+	file_->pos = lazy_load_args_->ofs;
+	void * kva_ = page->frame->kva;
+	off_t read_bytes_ =  lazy_load_args_->read_bytes;
+	if(read_bytes_ != file_read(file_, kva_, read_bytes_)) {
+		return false;
+	} 
+	// frame 만들 떄 calloc으로 0으로 초기화 했기 때문에 read_byte만큼 frame에 채우고 zero_byte만큼 채우지 않아도 괜찮다?
+	free(lazy_load_args_);
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -1248,7 +1262,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
 					writable, lazy_load_segment, aux))
 			return false;
-
+		
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
@@ -1263,7 +1277,7 @@ static bool
 setup_stack (struct intr_frame *if_) {
 	bool success = false;
 	void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
-
+	
 	/* TODO: Map the stack on stack_bottom and claim the page immediately.
 	 * TODO: If success, set the rsp accordingly.
 	 * TODO: You should mark the page is stack. */
