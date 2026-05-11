@@ -184,7 +184,7 @@ vm_do_claim_page (struct page *page_) {
 	frame_->page = page_;
 	page_->frame = frame_;
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
-	bool is_claimed = pml4_set_page (thread_current ()->pml4, page_->va, frame_->kva, true); // frame이 아니라 frame->kva 맞나?
+	bool is_claimed = pml4_set_page (thread_current ()->pml4, page_->va, frame_->kva, page_->writable);
 
 	if (is_claimed) {
 		return swap_in (page_, frame_->kva);
