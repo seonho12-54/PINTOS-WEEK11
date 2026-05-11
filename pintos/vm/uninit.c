@@ -64,6 +64,7 @@ uninit_destroy (struct page *page) {
 
 
 	struct uninit_page *uninit UNUSED = &page->uninit; //uninit 페이지가 가지고 있는 자원을 해제하는 함수입니다. 
+	//spt에 등록된거를 이제 폴트 나서 다른거를 호출해서 타입을 바꿔야해서 기존에 등록된 아무것도 아닌 uninit을 해제하는 함수입니다.
 	
 	
 	/* TODO: Fill this function.
