@@ -67,21 +67,19 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 			goto err;
 		
 
-		switch(type){
-			case VM_ANON:
-				init = anon_initializer; //익명 페이지의 초기화기를 가져옵니다.
-				break;
-			case VM_FILE:
-				init = file_backed_initializer; //파일 페이지의 초기화기를 가져옵니다.
-				break;
-			}
-
-
-
-			// 6. uninit_new를 호출하여 “uninit” 페이지 구조체를 생성합니다.
-			//호출을 할 때 6번째 인자값으로 init을 넣어주는 이유는 uninit_new에서 초기화기를 호출하기 위해서입니다.
-		uninit_new(page, upage, init, type, aux, init); //uninit_new를 호출하여 “uninit” 페이지 구조체를 생성합니다.
-		
+		switch (type) {
+					case VM_ANON: {
+						uninit_new(page, upage, init, type, aux, anon_initializer);
+						break;
+					}
+					case VM_FILE: {
+						uninit_new(page, upage, init, type, aux, file_backed_initializer);
+						break;
+					}
+					default:
+						free(page);
+						goto err;
+				}		
 
 		//페이지 구조체 밑에 bool writable을 바꾸어 줘야합니다. 
 		page ->writable = writable; //페이지의 쓰기 가능 여부를 설정합니다.
