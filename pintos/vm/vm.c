@@ -63,6 +63,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		struct page *page = malloc(sizeof(struct page)); // 일단 페이지 메타데이터를 만듭니다.
 
 		if (page == NULL) //만약 에러뜨면 goto 하는거여
+			free(page)//에러가 뜨면 프리를 해버리는겨
 			goto err;
 		
 		uninit_new(page, upage, init, type, aux, NULL); //uninit_new를 호출하여 “uninit” 페이지 구조체를 생성합니다.
