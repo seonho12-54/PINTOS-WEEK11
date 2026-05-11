@@ -3,6 +3,7 @@
 #include "threads/malloc.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
+#include "threads/mmu.h"
 #include "hash.h"
 #include "threads/vaddr.h"
 
@@ -142,12 +143,25 @@ vm_evict_frame (void) {
  * space.*/
 static struct frame *
 vm_get_frame (void) {
-	struct frame *frame = NULL;
-	/* TODO: Fill this function. */
+  struct frame *frame_ = NULL;
+  /* TODO: Fill this function. */
+  frame_ = calloc(sizeof(struct frame), 1);
+  if (frame_ == NULL) {
+    PANIC ("calloc() fail: kernel heap shortage");
+  }
 
-	ASSERT (frame != NULL);
-	ASSERT (frame->page == NULL);
-	return frame;
+  frame_->kva = palloc_get_page(PAL_USER);
+
+  if (frame_->kva == NULL) {
+    free(frame_);
+    PANIC ("todo: eviction");
+    /* Eviction은 나중에 추가 구현 필요 */
+    /* if frame_->kva == NULL {frame table 순회하면서 victim 정하고 eviction} */
+  }
+
+  ASSERT (frame_ != NULL);
+  ASSERT (frame_->page == NULL);
+  return frame_;
 }
 
 /* Growing the stack. */
@@ -183,24 +197,46 @@ vm_dealloc_page (struct page *page) {
 /* Claim the page that allocate on VA. */
 bool
 vm_claim_page (void *va UNUSED) {
-	struct page *page = NULL;
-	/* TODO: Fill this function */
-
-	return vm_do_claim_page (page);
+  struct page *page_ = NULL;
+  /* TODO: Fill this function */
+  page_ = spt_find_page (&(thread_current ()->spt), va);
+  if (page_ != NULL) {
+    return vm_do_claim_page (page_);
+  }
+  else {
+    PANIC ("todo"); // stack growth 조건 만족하는지 이후 추가 구현 필요
+  }
 }
 
 /* Claim the PAGE and set up the mmu. */
 static bool
-vm_do_claim_page (struct page *page) {
-	struct frame *frame = vm_get_frame ();
-
+vm_do_claim_page (struct page *page_) {
+	struct frame *frame_ = vm_get_frame ();
+	bool is_claimed = false;
 	/* Set links */
-	frame->page = page;
-	page->frame = frame;
-
+	frame_->page = page_;
+	page_->frame = frame_;
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+	is_claimed = pml4_set_page (thread_current ()->pml4, page_->va, frame_->kva, page_->writable);
 
-	return swap_in (page, frame->kva);
+	if (is_claimed) {
+		if (swap_in (page_, frame_->kva)) {
+			return true;
+		}
+		goto cleanup;
+	}
+	cleanup:
+		/* Link 초기화 */
+		frame_->page = NULL;
+		page_->frame = NULL;
+		/* is_swapped_in 에서 실패했을 경우 mapping 제거 */
+		if (is_claimed) {
+			pml4_clear_page (thread_current ()->pml4, page_->va);
+		}
+		/* frame KVA 반환 */
+		palloc_free_page (frame_->kva);
+		free (frame_);
+		return false;
 }
 
 /* Initialize new supplemental page table */
