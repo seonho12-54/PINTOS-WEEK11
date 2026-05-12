@@ -295,30 +295,29 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 		{	
 			/* 부모 프로세스 정보만 가져와서 uninit으로 다 새로 만들어줘야함.*/
 			struct page *fp = hash_entry(hash_cur(&i), struct page, hash_elem);
-
-			enum vm_type ty = fp->operations->type;
+			enum vm_type ty = page_get_type(fp);
+			enum vm_type target_ty = fp->operations->type; // 타겟 타입..
 			
-			switch (VM_TYPE(ty)) {
-				case (VM_ANON): {
-					if (!vm_alloc_page_with_initializer(ty, fp->va, fp->writable, ?, fp->anon.aux)) {
-						return false;
-					}
+			/* 부모의 SPT에 있는 UNINIT ANON FILE 페이지들을 전부 복사 */
+
+			if (VM_TYPE(ty) == VM_UNINIT) {
+				if (!vm_alloc_page(target_ty, fp->va, fp->writable)) {
+					return false;
 				}
-				case (VM_FILE): {
-					if (!vm_alloc_page_with_initializer(ty, fp->va, fp->writable, ?, fp->file.aux)) {
-						return false;
-					}
-				}
-				
 			}
-			/* 고민 1. vm_alloc_page_with_initializer의 4번째 인자에 도대체 뭐가 들어가야하냐? */
+			else {
+				if (!vm_alloc_page(ty, fp->va, fp->writable)) {
+					return false;
+				}
+			}
+
+			/* 고민 1. vm_alloc_page_with_initializer의 4번째 인자에 도대체 뭐가 들어가야하냐? -> 필요 없어 */
 			/* 고민 2. 고민 1이 해결이 되면, page가 할당되고 spt에도 들어가는데, 여기에 src의 페이지들을 어떻게 복사해주냐? */
-			memcpy(p, fp, PGSIZE);
-			if(!spt_insert_page(dst, p)) {
-				return false;
-			}
+			
 			/* 즉시 claim */
-			vm_claim_page(p->va);
+			vm_claim_page(fp->va);
+			struct page *p = spt_find_page(dst, fp->va);
+			memcpy(p->frame->kva, fp->frame->kva, PGSIZE);
 		}
 		return true;
 }
@@ -328,7 +327,7 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
-	hash_destroy(&spt->pages, 이거 action function도 만들어야 하는건가....?) /* DESTRUCTOR may, if appropriate, deallocate the memory used by the hash element.*/
+	hash_destroy(&spt->pages, destructor) /* DESTRUCTOR may, if appropriate, deallocate the memory used by the hash element.*/
 }
 
 /* 해시값의 가상 주소를 해시값으로 바꿔서 SPT 해시 테이블에서 찾기 쉽게 만듦 */
@@ -345,3 +344,5 @@ static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void
 
 	return pa->va < pb->va;
 }
+
+/* destructor 구현 필요*/
