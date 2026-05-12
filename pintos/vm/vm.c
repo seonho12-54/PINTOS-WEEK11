@@ -285,8 +285,24 @@ supplemental_page_table_init (struct supplemental_page_table *spt) {
 
 /* Copy supplemental page table from src to dst */
 bool
-supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
-		struct supplemental_page_table *src UNUSED) {
+supplemental_page_table_copy (struct supplemental_page_table *dst,
+		struct supplemental_page_table *src) {
+		struct hash_iterator i;
+
+		hash_first(&i, &src->pages);
+		while (hash_next(&i))
+		{
+			/* 자식 프로세스에게 페이지 할당 (맞나?)*/
+			struct page *p = malloc(sizeof(struct page));
+			p = hash_entry(hash_cur(&i), struct page, hash_elem);
+
+			if(!spt_insert_page(dst, p)) {
+				return false;
+			}
+			/* 즉시 claim */
+			vm_claim_page(p->va);
+		}
+		return true;
 }
 
 /* Free the resource hold by the supplemental page table */
