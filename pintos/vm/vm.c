@@ -6,6 +6,7 @@
 #include "threads/mmu.h"
 #include "hash.h"
 #include "threads/vaddr.h"
+#include "lib/string.h"
 
 static uint64_t page_hash (const struct hash_elem *e, void *aux);
 static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux);
@@ -291,11 +292,28 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 
 		hash_first(&i, &src->pages);
 		while (hash_next(&i))
-		{
-			/* 자식 프로세스에게 페이지 할당 (맞나?)*/
-			struct page *p = malloc(sizeof(struct page));
-			p = hash_entry(hash_cur(&i), struct page, hash_elem);
+		{	
+			/* 부모 프로세스 정보만 가져와서 uninit으로 다 새로 만들어줘야함.*/
+			struct page *fp = hash_entry(hash_cur(&i), struct page, hash_elem);
 
+			enum vm_type ty = fp->operations->type;
+			
+			switch (VM_TYPE(ty)) {
+				case (VM_ANON): {
+					if (!vm_alloc_page_with_initializer(ty, fp->va, fp->writable, ?, fp->anon.aux)) {
+						return false;
+					}
+				}
+				case (VM_FILE): {
+					if (!vm_alloc_page_with_initializer(ty, fp->va, fp->writable, ?, fp->file.aux)) {
+						return false;
+					}
+				}
+				
+			}
+			/* 고민 1. vm_alloc_page_with_initializer의 4번째 인자에 도대체 뭐가 들어가야하냐? */
+			/* 고민 2. 고민 1이 해결이 되면, page가 할당되고 spt에도 들어가는데, 여기에 src의 페이지들을 어떻게 복사해주냐? */
+			memcpy(p, fp, PGSIZE);
 			if(!spt_insert_page(dst, p)) {
 				return false;
 			}
@@ -310,6 +328,7 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+	hash_destroy(&spt->pages, 이거 action function도 만들어야 하는건가....?) /* DESTRUCTOR may, if appropriate, deallocate the memory used by the hash element.*/
 }
 
 /* 해시값의 가상 주소를 해시값으로 바꿔서 SPT 해시 테이블에서 찾기 쉽게 만듦 */
