@@ -157,12 +157,14 @@ vm_evict_frame (void) {
 }
 
 /* 사용자 풀에서 프레임을 확보한다.
- * 지금은 빈 페이지를 바로 받고, 풀이 가득 찬 경우는 이후 eviction
- * 경로에서 처리한다. */
+ * 지금은 빈 페이지를 바로 받고, 풀이 가득 찬 경우는 이후 eviction 경로에서 처리한다.
+ * 이 함수는 추후 eviction 구현 후 대부분의 상황에서 가용할 수 있는 frame을 반환하도록 한다.
+ * frame 반환이 불가능한 경우는 kernel heap 메모리 부족 등 kernel panic 으로 구현했다.
+ * */
 static struct frame *
 vm_get_frame (void) {
   struct frame *frame_ = NULL;
-  /* TODO: frame table과 eviction 정책은 이후 단계에서 연결한다. */
+ 
   frame_ = calloc(sizeof(struct frame), 1);
   if (frame_ == NULL) {
     PANIC ("calloc() fail: kernel heap shortage");
@@ -173,6 +175,7 @@ vm_get_frame (void) {
   if (frame_->kva == NULL) {
     free(frame_);
     PANIC ("todo: eviction");
+	/* TODO: frame table과 eviction 정책은 이후 단계에서 연결한다. */
     /* 사용자 풀 페이지가 없으면 이후 eviction 경로로 이어진다. */
   }
 
