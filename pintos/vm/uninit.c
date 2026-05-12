@@ -24,8 +24,7 @@ static const struct page_operations uninit_ops = {
 
 /* DO NOT MODIFY this function */
 void
-uninit_new (struct page *page, void *va, vm_initializer *init,
-		enum vm_type type, void *aux,
+uninit_new (struct page *page, void *va, vm_initializer *init, enum vm_type type, void *aux,
 		bool (*initializer)(struct page *, enum vm_type, void *)) {
 	ASSERT (page != NULL);
 
@@ -56,13 +55,23 @@ uninit_initialize (struct page *page, void *kva) {
 		(init ? init (page, aux) : true);
 }
 
-/* Free the resources hold by uninit_page. Although most of pages are transmuted
- * to other page objects, it is possible to have uninit pages when the process
- * exit, which are never referenced during the execution.
- * PAGE will be freed by the caller. */
+/* uninit_page가 들고 있던 자원을 정리한다.
+ * 대부분의 페이지는 다른 타입으로 바뀌지만, 한 번도 접근되지 않은
+ * uninit 페이지가 종료 시점까지 남을 수 있다.
+ * PAGE 자체는 호출자가 해제한다. */
 static void
 uninit_destroy (struct page *page) {
-	struct uninit_page *uninit UNUSED = &page->uninit;
-	/* TODO: Fill this function.
-	 * TODO: If you don't have anything to do, just return. */
+
+
+	struct uninit_page *uninit = &page->uninit; 
+
+	/* 초기화되지 않은 채 종료되는 페이지도 있으므로 aux가 남아 있으면 정리한다. */
+
+	if(uninit !=NULL && uninit->aux != NULL){
+		free(uninit->aux);
+	}
+	/* TODO: 추가로 정리할 자원이 없다면 그대로 반환한다. */
+
+
+
 }
