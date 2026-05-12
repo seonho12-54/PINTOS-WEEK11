@@ -317,7 +317,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 			/* 즉시 claim */
 			vm_claim_page(fp->va);
 			struct page *p = spt_find_page(dst, fp->va);
-			memcpy(p->frame->kva, fp->frame->kva, PGSIZE);
+			memcpy(p, fp, PGSIZE);
 		}
 		return true;
 }
