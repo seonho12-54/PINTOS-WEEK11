@@ -69,9 +69,7 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 
 		switch (ty) {
 					case VM_ANON: {
-
 						uninit_new(page_, upage, init, type, aux, anon_initializer);
-						
 						break;
 					}
 					case VM_FILE: {
@@ -90,18 +88,11 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 			free (page_);
 			return false;
 		}
-
-
 		return true;
-
 	}
 err:
 	return false;
 }
-
-
-
-
 
 /* SPT에서 VA에 대응하는 페이지를 찾고, 없으면 NULL을 반환한다. */
 struct page *
@@ -301,12 +292,14 @@ supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	 * TODO: writeback all the modified contents to the storage. */
 }
 
+/* 해시값의 가상 주소를 해시값으로 바꿔서 SPT 해시 테이블에서 찾기 쉽게 만듦 */
 static uint64_t page_hash(const struct hash_elem *e, void *aux UNUSED) {
 	const struct page *page = hash_entry(e, struct page, hash_elem);
 
 	return hash_bytes(&page->va, sizeof page->va);
 }
 
+/* va 크기 순서로 비교해서 같은 해시 테이블 안에서 정렬 */
 static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
 	const struct page *pa = hash_entry(a, struct page, hash_elem);
 	const struct page *pb = hash_entry(b, struct page, hash_elem);
