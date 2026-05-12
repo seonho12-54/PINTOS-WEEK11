@@ -102,7 +102,7 @@ spt_find_page (struct supplemental_page_table *spt, void *va) {
 	struct page p;
 	struct hash_elem *e;
 
-	p.va = pg_round_down(va);
+	p.va = pg_round_down(va);  // 가상 주소를 시작 주소로 내림
 	e = hash_find(&spt->pages, &p.hash_elem);
 
 	if (e != NULL) {
@@ -120,7 +120,7 @@ spt_insert_page (struct supplemental_page_table *spt,
 
 	bool succ = false;
 
-	page->va = pg_round_down(page->va);
+	page->va = pg_round_down(page->va);  // 가상 주소를 시작 주소로 내림
 	struct hash_elem *e = hash_insert(&spt->pages, &page->hash_elem);
 
 	if (e == NULL) {
