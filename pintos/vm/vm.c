@@ -255,6 +255,7 @@ vm_do_claim_page (struct page *page_) {
 	is_claimed = pml4_set_page (thread_current ()->pml4, page_->va, frame_->kva, page_->writable);
 
 	if (is_claimed) {
+		/* page type에 따라 호출되는 swap_in function이 다르고, 그 function에 대한 정의는 swap 구현 시 필요 */
 		if (swap_in (page_, frame_->kva)) {
 			return true;
 		}
@@ -268,7 +269,7 @@ vm_do_claim_page (struct page *page_) {
 		if (is_claimed) {
 			pml4_clear_page (thread_current ()->pml4, page_->va);
 		}
-		/* 확보한 사용자 프레임을 반환한다. */
+		/* vm_get_frame() 내부에서 확보한 사용자 프레임을 반환한다. */
 		palloc_free_page (frame_->kva);
 		free (frame_);
 		return false;
