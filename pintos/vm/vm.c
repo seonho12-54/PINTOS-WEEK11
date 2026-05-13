@@ -327,7 +327,7 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
-	hash_destroy(&spt->pages, destructor) /* DESTRUCTOR may, if appropriate, deallocate the memory used by the hash element.*/
+	hash_destroy(&spt->pages, hash_destructor) /* DESTRUCTOR may, if appropriate, deallocate the memory used by the hash element.*/
 }
 
 /* 해시값의 가상 주소를 해시값으로 바꿔서 SPT 해시 테이블에서 찾기 쉽게 만듦 */
@@ -346,3 +346,12 @@ static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void
 }
 
 /* destructor 구현 필요*/
+
+/* Performs some operation on hash element E, given auxiliary
+ * data AUX. */
+static void *hash_destructor (struct hash_elem *e, void *aux) {
+	// 1. hash_elem page_entry로 page SPT에서 지우기 -> 이거는 hash_clear 에서 list_pop_front로 bucket에서 제거되므로, 괜찮을듯?
+	// 2. page free or dealloc
+	struct page *p = hash_entry(e, struct page, hash_elem);
+	vm_dealloc_page(p);
+}
