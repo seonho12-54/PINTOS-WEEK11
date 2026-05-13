@@ -711,6 +711,7 @@ process_exec (void *f_name) {
 	- 권한 관리: 각 단계의 엔트리마다 "이 영역은 읽기 전용인가?", "유저가 접근 가능한가?" 같은 권한 비트를 심어둘 수 있다. 하드웨어가 주소를 찾아 내려가다가 권한이 없는 층을 발견하면 즉시 차단(Segmentation Fault 등)한다.*/
 	
 	process_cleanup ();
+	supplemental_page_table_init(&thread_current()->spt);
 	
 	// TODO: Argument 분리해서 파일명만 load()로 넘기기 
 	// 기능 2: 사용자 스택 레이아웃 구성 부분 시작 (ABI 계약)
