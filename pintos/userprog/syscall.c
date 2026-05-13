@@ -134,7 +134,9 @@ is_valid_user_ptr(const void *uaddr)
 	if (pml4_get_page(thread_current()->pml4, (void *)uaddr) == NULL)
 	{
 		user_mem_debug("invalid user ptr: unmapped %p\n", uaddr);
-		return false;
+		if(!spt_find_page(&thread_current()->spt, pg_round_down(uaddr))) {
+			return false;
+		}
 	}
 
 	return true;
