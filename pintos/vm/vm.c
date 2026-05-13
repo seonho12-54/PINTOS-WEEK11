@@ -10,6 +10,7 @@
 
 static uint64_t page_hash (const struct hash_elem *e, void *aux);
 static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux);
+static void *hash_destructor (struct hash_elem *e, void *aux);
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -324,10 +325,17 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 
 /* Free the resource hold by the supplemental page table */
 void
-supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
+supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
-	hash_destroy(&spt->pages, hash_destructor) /* DESTRUCTOR may, if appropriate, deallocate the memory used by the hash element.*/
+	if (spt == NULL) {
+		return;
+	}
+
+	hash_destroy(&spt->pages, hash_destructor); /* DESTRUCTOR may, if appropriate, deallocate the memory used by the hash element.*/
+
+	spt->pages.hash = NULL;
+	spt->pages.less = NULL;
 }
 
 /* 해시값의 가상 주소를 해시값으로 바꿔서 SPT 해시 테이블에서 찾기 쉽게 만듦 */
@@ -352,6 +360,13 @@ static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void
 static void *hash_destructor (struct hash_elem *e, void *aux) {
 	// 1. hash_elem page_entry로 page SPT에서 지우기 -> 이거는 hash_clear 에서 list_pop_front로 bucket에서 제거되므로, 괜찮을듯?
 	// 2. page free or dealloc
+	if (e == NULL) {
+		return;
+	}
+
 	struct page *p = hash_entry(e, struct page, hash_elem);
 	vm_dealloc_page(p);
+	if (aux != NULL) {
+		free(aux);
+	}
 }
