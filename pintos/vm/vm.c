@@ -7,6 +7,7 @@
 #include "hash.h"
 #include "threads/vaddr.h"
 #include "lib/string.h"
+#include "userprog/process.h"
 
 static uint64_t page_hash (const struct hash_elem *e, void *aux);
 static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux);
@@ -296,13 +297,17 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 		{	
 			/* 부모 프로세스 정보만 가져와서 uninit으로 다 새로 만들어줘야함.*/
 			struct page *fp = hash_entry(hash_cur(&i), struct page, hash_elem);
-			enum vm_type ty = page_get_type(fp);
-			enum vm_type target_ty = fp->operations->type; // 타겟 타입..
+			enum vm_type ty = fp->operations->type; // 이게 현재 페이지의 타입
+			enum vm_type target_ty = page_get_type(fp); // UNINIT일 경우 이건 타겟 타입
 			
 			/* 부모의 SPT에 있는 UNINIT ANON FILE 페이지들을 전부 복사 */
-
+			/* UNINIT은 vm_alloc_page_with_initializer랑 lazy_load_segment로 만들어줘야하지 않나? 그러면*/
+			
 			if (VM_TYPE(ty) == VM_UNINIT) {
-				if (!vm_alloc_page(target_ty, fp->va, fp->writable)) {
+				struct lazy_load_args *aux = malloc(sizeof *aux); //
+				*aux = *((struct lazy_load_args *)fp->uninit.aux); //
+				if (!aux || !vm_alloc_page_with_initializer(target_ty, fp->va, fp->writable, fp->uninit.init, fp->uninit.aux)) {
+					free(aux);
 					return false;
 				}
 			}
@@ -310,15 +315,15 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 				if (!vm_alloc_page(ty, fp->va, fp->writable)) {
 					return false;
 				}
+				/* UNINIT이 아닌 경우 즉시 claim */
+				vm_claim_page(fp->va); //
+				struct page *p = spt_find_page(dst, fp->va);
+				memcpy(p->frame->kva, fp->frame->kva, PGSIZE); //
 			}
 
 			/* 고민 1. vm_alloc_page_with_initializer의 4번째 인자에 도대체 뭐가 들어가야하냐? -> 필요 없어 */
 			/* 고민 2. 고민 1이 해결이 되면, page가 할당되고 spt에도 들어가는데, 여기에 src의 페이지들을 어떻게 복사해주냐? */
-			
-			/* 즉시 claim */
-			vm_claim_page(fp->va);
-			struct page *p = spt_find_page(dst, fp->va);
-			memcpy(p, fp, PGSIZE);
+
 		}
 		return true;
 }
@@ -366,7 +371,4 @@ static void *hash_destructor (struct hash_elem *e, void *aux) {
 
 	struct page *p = hash_entry(e, struct page, hash_elem);
 	vm_dealloc_page(p);
-	if (aux != NULL) {
-		free(aux);
-	}
 }
