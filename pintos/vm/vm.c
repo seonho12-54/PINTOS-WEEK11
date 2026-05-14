@@ -306,7 +306,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 			if (VM_TYPE(ty) == VM_UNINIT) {
 				struct lazy_load_args *aux = malloc(sizeof *aux); //
 				*aux = *((struct lazy_load_args *)fp->uninit.aux); //
-				if (!aux || !vm_alloc_page_with_initializer(target_ty, fp->va, fp->writable, fp->uninit.init, &aux)) {
+				if (!aux || !vm_alloc_page_with_initializer(target_ty, fp->va, fp->writable, fp->uninit.init, aux)) {
 					free(aux);
 					return false;
 				}
@@ -315,10 +315,13 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 				if (!vm_alloc_page(ty, fp->va, fp->writable)) {
 					return false;
 				}
+				vm_claim_page(fp->va); 
+
+				if(fp->frame != NULL) {
 				/* UNINIT이 아닌 경우 즉시 claim */
-				vm_claim_page(fp->va); //
 				struct page *p = spt_find_page(dst, fp->va);
 				memcpy(p->frame->kva, fp->frame->kva, PGSIZE); //
+				}
 			}
 
 			/* 고민 1. vm_alloc_page_with_initializer의 4번째 인자에 도대체 뭐가 들어가야하냐? -> 필요 없어 */

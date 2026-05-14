@@ -68,7 +68,7 @@ uninit_destroy (struct page *page) {
 	/* 초기화되지 않은 채 종료되는 페이지도 있으므로 aux가 남아 있으면 정리한다. */
 
 	if(uninit !=NULL && uninit->aux != NULL){
-		// free(uninit->aux);
+		free(uninit->aux);
 	}
 	/* TODO: 추가로 정리할 자원이 없다면 그대로 반환한다. */
 
