@@ -1,5 +1,6 @@
 /* vm.c: Generic interface for virtual memory objects. */
 
+#include <stdio.h>
 #include "threads/malloc.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
@@ -8,6 +9,9 @@
 #include "threads/vaddr.h"
 #include "lib/string.h"
 #include "userprog/process.h"
+
+#define STACK_MAX_SIZE (1 << 20)
+#define STACK_A_DBG(...) printf("[stack-a dbg] " __VA_ARGS__)
 
 static uint64_t page_hash (const struct hash_elem *e, void *aux);
 static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux);
@@ -191,6 +195,22 @@ vm_get_frame (void) {
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr UNUSED) {
+	uint8_t *upage = pg_round_down (addr);
+	uint8_t *stack_limit = (uint8_t *) USER_STACK - STACK_MAX_SIZE;
+
+	if (upage < stack_limit || upage >= (uint8_t *) USER_STACK)
+		return;
+
+	for (uint8_t *page = upage; page < (uint8_t *) USER_STACK; page += PGSIZE) {
+		if (spt_find_page (&thread_current ()->spt, page) != NULL)
+			continue;
+
+		if (!vm_alloc_page (VM_ANON | VM_MARKER_0, page, true))
+			return;
+
+		if (!vm_claim_page (page))
+			return;
+	}
 }
 
 /* Handle the fault on write_protected page */
@@ -201,11 +221,19 @@ vm_handle_wp (struct page *page UNUSED) {
 bool
 check_valid_stack_growth(uintptr_t rsp, void * addr) {
 	uintptr_t addr_ptr = addr;
-	if(addr_ptr >= rsp - 8 && addr_ptr < rsp && addr_ptr >= USER_STACK-(1<<20)) {
-		return true;
-	} else {
-		return false;
-	}
+	uintptr_t lower_bound = rsp - 0x10018;
+	uintptr_t stack_limit = USER_STACK - (1 << 20);
+	bool cond_near_rsp = addr_ptr >= lower_bound;
+	bool cond_below_rsp = addr_ptr < rsp;
+	bool cond_above_stack_limit = addr_ptr >= stack_limit;
+	bool ok = cond_near_rsp && cond_below_rsp && cond_above_stack_limit;
+
+	STACK_A_DBG("check_valid_stack_growth: tid=%d rsp=%p addr=%p lower_bound=%p stack_limit=%p\n",
+			thread_current()->tid, (void *) rsp, addr,
+			(void *) lower_bound, (void *) stack_limit);
+	STACK_A_DBG("check_valid_stack_growth: cond1(addr >= rsp - 0x10018)= %d cond2(addr < rsp)= %d cond3(addr >= USER_STACK - 1MB)= %d result= %d\n",
+			cond_near_rsp, cond_below_rsp, cond_above_stack_limit, ok);
+	return ok;
 }
 
 /* fault 처리가 성공하면 true를 반환한다. */
@@ -214,23 +242,31 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
 		bool user , bool write , bool not_present ) {
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 	struct page *page = NULL;
+	uintptr_t saved_rsp = thread_current()->rsp;
+	uintptr_t frame_rsp = f ? f->rsp : 0;
+
+	STACK_A_DBG("vm_try_handle_fault: enter tid=%d name=%s addr=%p user=%d write=%d not_present=%d saved_rsp=%p frame_rsp=%p\n",
+			thread_current()->tid, thread_current()->name, addr,
+			user, write, not_present, (void *) saved_rsp, (void *) frame_rsp);
 
 	/* 잘못된 fault와 권한 위반은 먼저 걸러낸다. */
 	if(addr == NULL || is_kernel_vaddr(addr)) { /* 커널 주소 fault는 사용자 페이지로 처리하지 않는다. */
+		STACK_A_DBG("vm_try_handle_fault: reject invalid addr tid=%d addr=%p is_null=%d is_kernel=%d\n",
+				thread_current()->tid, addr, addr == NULL, addr ? is_kernel_vaddr(addr) : 0);
 		return false;
 	}
 
 
 	if(!not_present) { /* not-present fault만 여기서 처리한다. */
-		return false;
-	}
-
-	if(write && !page->writable) { /* 읽기 전용 페이지 쓰기는 거절한다. */
+		STACK_A_DBG("vm_try_handle_fault: reject present-page fault tid=%d addr=%p\n",
+				thread_current()->tid, addr);
 		return false;
 	}
 
 	/* TODO: Your code goes here */
 	page = spt_find_page(spt, pg_round_down(addr));
+	STACK_A_DBG("vm_try_handle_fault: spt lookup tid=%d addr=%p rounded=%p page=%p\n",
+			thread_current()->tid, addr, pg_round_down(addr), page);
 	 // 커널 모드 / 유저 모드 어디에서 페이지 폴트가 났는지
 	if(page == NULL) {
 		/*
@@ -240,16 +276,33 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
 		uintptr_t rsp = thread_current()->rsp;
 		if(!rsp) { // 유저 모드에서 폴트가 났다면...
 			rsp = f->rsp;
-		} 
+			STACK_A_DBG("vm_try_handle_fault: use frame rsp tid=%d rsp=%p\n",
+					thread_current()->tid, (void *) rsp);
+		} else {
+			STACK_A_DBG("vm_try_handle_fault: use saved rsp tid=%d rsp=%p\n",
+					thread_current()->tid, (void *) rsp);
+		}
 
 		if(check_valid_stack_growth(rsp, addr)) {
+			STACK_A_DBG("vm_try_handle_fault: stack growth accepted tid=%d addr=%p rsp=%p\n",
+					thread_current()->tid, addr, (void *) rsp);
 			vm_stack_growth(addr);
 		} else {
+			STACK_A_DBG("vm_try_handle_fault: stack growth rejected tid=%d addr=%p rsp=%p\n",
+					thread_current()->tid, addr, (void *) rsp);
 			return false;
 		}
-		
+
 	}
 
+	if(write && !page->writable) { /* 읽기 전용 페이지 쓰기는 거절한다. */
+		STACK_A_DBG("vm_try_handle_fault: reject write readonly tid=%d addr=%p page=%p writable=%d\n",
+				thread_current()->tid, addr, page, page ? page->writable : -1);
+		return false;
+	}
+
+	STACK_A_DBG("vm_try_handle_fault: pass to claim tid=%d addr=%p page=%p writable=%d\n",
+			thread_current()->tid, addr, page, page ? page->writable : -1);
 	return vm_do_claim_page (page);
 	
 }

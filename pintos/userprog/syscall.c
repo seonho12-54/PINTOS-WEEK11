@@ -21,6 +21,12 @@
 #include "threads/init.h"  // power_off 함수
 #include "filesys/file.h"  // file_write 함수
 #include "devices/input.h" //sys_read
+#ifdef VM
+#include "vm/vm.h"
+#endif
+
+#define STACK_MAX_SIZE (1 << 20)
+#define STACK_A_DBG(...) printf("[stack-a dbg] " __VA_ARGS__)
 
 // 평소에는 꺼두기
 #define USER_MEM_DEBUG 0
@@ -56,6 +62,8 @@ static bool file_name_is_too_long(const char *file);
 // 유저 메모리 유효성 검사 함수
 static void fail_invalid_user_memory(void);
 static bool is_valid_user_ptr(const void *uaddr);
+static bool is_syscall_stack_addr(const void *uaddr);
+static bool ensure_syscall_stack_page(const void *uaddr);
 static void validate_user_ptr(const void *uaddr);
 static void validate_user_buffer(const void *buffer, size_t size);
 static void validate_user_string(const char *str);
@@ -111,6 +119,42 @@ fail_invalid_user_memory(void)
 	sys_exit(-1);
 }
 
+static bool
+is_syscall_stack_addr(const void *uaddr)
+{
+#ifdef VM
+	uintptr_t addr = (uintptr_t) uaddr;
+	uintptr_t rsp = thread_current()->rsp;
+	uintptr_t stack_limit = (uintptr_t) USER_STACK - STACK_MAX_SIZE;
+
+	return rsp != 0 && addr >= stack_limit && addr < (uintptr_t) USER_STACK;
+#else
+	return false;
+#endif
+}
+
+static bool
+ensure_syscall_stack_page(const void *uaddr)
+{
+#ifdef VM
+	void *upage = pg_round_down(uaddr);
+	struct supplemental_page_table *spt = &thread_current()->spt;
+
+	if (!is_syscall_stack_addr(uaddr))
+		return false;
+
+	if (spt_find_page(spt, upage) == NULL) {
+		if (!vm_alloc_page(VM_ANON | VM_MARKER_0, upage, true))
+			return false;
+	}
+
+	return pml4_get_page(thread_current()->pml4, upage) != NULL ||
+		vm_claim_page(upage);
+#else
+	return false;
+#endif
+}
+
 // 접근 가능한 사용자 주소인지 판별하는 함수
 static bool
 is_valid_user_ptr(const void *uaddr)
@@ -134,9 +178,16 @@ is_valid_user_ptr(const void *uaddr)
 	if (pml4_get_page(thread_current()->pml4, (void *)uaddr) == NULL)
 	{
 		user_mem_debug("invalid user ptr: unmapped %p\n", uaddr);
+#ifdef VM
+		if (ensure_syscall_stack_page(uaddr))
+			return true;
+
 		if(!spt_find_page(&thread_current()->spt, pg_round_down(uaddr))) {
 			return false;
 		}
+#else
+		return false;
+#endif
 	}
 
 	return true;
@@ -482,7 +533,12 @@ void syscall_handler(struct intr_frame *f UNUSED)
 {
 	// 10번이 SYS_WRITE
 	int sys_call = f->R.rax;
+	uintptr_t old_rsp = thread_current()->rsp;
 	thread_current()->rsp = f->rsp; //syscall 진입 시 user rsp 보존
+	STACK_A_DBG("syscall_handler: tid=%d name=%s syscall=%d old_saved_rsp=%p new_saved_rsp=%p frame_rsp=%p rip=%p\n",
+			thread_current()->tid, thread_current()->name, sys_call,
+			(void *) old_rsp, (void *) thread_current()->rsp,
+			(void *) f->rsp, (void *) f->rip);
 	switch (sys_call)
 	{
 	case SYS_WRITE:
