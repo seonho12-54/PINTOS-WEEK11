@@ -1224,7 +1224,7 @@ lazy_load_segment (struct page *page, void *aux) {
 	
 	/* 파일에서 읽지 않은 나머지 바이트는 0으로 채운다. */
 	memset((uint8_t *) (page->frame->kva) + read_bytes_, 0, zero_bytes_);
-	// free(lazy_load_args_);
+	free(lazy_load_args_);
 	return true;
 }
 

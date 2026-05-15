@@ -301,7 +301,6 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 			enum vm_type target_ty = page_get_type(fp); // UNINIT일 경우 이건 타겟 타입
 			
 			/* 부모의 SPT에 있는 UNINIT ANON FILE 페이지들을 전부 복사 */
-			/* UNINIT은 vm_alloc_page_with_initializer랑 lazy_load_segment로 만들어줘야하지 않나? 그러면*/
 			
 			if (VM_TYPE(ty) == VM_UNINIT) {
 				struct lazy_load_args *aux = malloc(sizeof *aux); //
@@ -315,17 +314,16 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 				if (!vm_alloc_page(ty, fp->va, fp->writable)) {
 					return false;
 				}
-				vm_claim_page(fp->va); 
 
+				/* ANON or FILE 이지만 eviction으로 인해 frame에 없을 경우 이후 swap 구현 시 로직 추가 필요 */
+				
 				if(fp->frame != NULL) {
-				/* UNINIT이 아닌 경우 즉시 claim */
-				struct page *p = spt_find_page(dst, fp->va);
-				memcpy(p->frame->kva, fp->frame->kva, PGSIZE); //
+					/* UNINIT이 아니고 frame이 mapping 되었다면 즉시 claim */
+					vm_claim_page(fp->va);
+					struct page *p = spt_find_page(dst, fp->va);
+					memcpy(p->frame->kva, fp->frame->kva, PGSIZE); //
 				}
 			}
-
-			/* 고민 1. vm_alloc_page_with_initializer의 4번째 인자에 도대체 뭐가 들어가야하냐? -> 필요 없어 */
-			/* 고민 2. 고민 1이 해결이 되면, page가 할당되고 spt에도 들어가는데, 여기에 src의 페이지들을 어떻게 복사해주냐? */
 
 		}
 		return true;
