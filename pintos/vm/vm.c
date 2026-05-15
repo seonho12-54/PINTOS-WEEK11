@@ -12,6 +12,7 @@
 static uint64_t page_hash (const struct hash_elem *e, void *aux);
 static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux);
 static void *hash_destructor (struct hash_elem *e, void *aux);
+bool check_valid_stack_growth(uintptr_t rsp, void * addr);
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -197,32 +198,63 @@ static bool
 vm_handle_wp (struct page *page UNUSED) {
 }
 
+bool
+check_valid_stack_growth(uintptr_t rsp, void * addr) {
+	uintptr_t addr_ptr = addr;
+	if(addr_ptr >= rsp - 8 && addr_ptr < rsp && addr_ptr >= USER_STACK-(1<<20)) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
 /* fault 처리가 성공하면 true를 반환한다. */
 bool
 vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
 		bool user , bool write , bool not_present ) {
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 	struct page *page = NULL;
+
 	/* 잘못된 fault와 권한 위반은 먼저 걸러낸다. */
 	if(addr == NULL || is_kernel_vaddr(addr)) { /* 커널 주소 fault는 사용자 페이지로 처리하지 않는다. */
 		return false;
 	}
 
-	if(!not_present) { /* not-present fault만 여기서 처리한다. */
-		return false;
-	}
 
-	/* TODO: Your code goes here */
-	page = spt_find_page(spt, pg_round_down(addr));
-	if(page == NULL) {
+	if(!not_present) { /* not-present fault만 여기서 처리한다. */
 		return false;
 	}
 
 	if(write && !page->writable) { /* 읽기 전용 페이지 쓰기는 거절한다. */
 		return false;
 	}
+
+	/* TODO: Your code goes here */
+	page = spt_find_page(spt, pg_round_down(addr));
+	 // 커널 모드 / 유저 모드 어디에서 페이지 폴트가 났는지
+	if(page == NULL) {
+		/*
+		커널 모드이면 thread의 rsp를 rsp에 넣어주면 되고
+		유저 모드이면 인터럽트 프레임의 rsp를 rsp에 넣어주면 되지
+		*/
+		uintptr_t rsp = thread_current()->rsp;
+		if(!rsp) { // 유저 모드에서 폴트가 났다면...
+			rsp = f->rsp;
+		} 
+
+		if(check_valid_stack_growth(rsp, addr)) {
+			vm_stack_growth(addr);
+		} else {
+			return false;
+		}
+		
+	}
+
 	return vm_do_claim_page (page);
+	
 }
+
+
 
 /* Free the page.
  * DO NOT MODIFY THIS FUNCTION. */
@@ -301,6 +333,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 			enum vm_type target_ty = page_get_type(fp); // UNINIT일 경우 이건 타겟 타입
 			
 			/* 부모의 SPT에 있는 UNINIT ANON FILE 페이지들을 전부 복사 */
+			/* UNINIT은 vm_alloc_page_with_initializer랑 lazy_load_segment로 만들어줘야하지 않나? 그러면*/
 			
 			if (VM_TYPE(ty) == VM_UNINIT) {
 				struct lazy_load_args *aux = malloc(sizeof *aux); //
@@ -314,16 +347,17 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 				if (!vm_alloc_page(ty, fp->va, fp->writable)) {
 					return false;
 				}
+				vm_claim_page(fp->va); 
 
-				/* ANON or FILE 이지만 eviction으로 인해 frame에 없을 경우 이후 swap 구현 시 로직 추가 필요 */
-				
 				if(fp->frame != NULL) {
-					/* UNINIT이 아니고 frame이 mapping 되었다면 즉시 claim */
-					vm_claim_page(fp->va);
-					struct page *p = spt_find_page(dst, fp->va);
-					memcpy(p->frame->kva, fp->frame->kva, PGSIZE); //
+				/* UNINIT이 아닌 경우 즉시 claim */
+				struct page *p = spt_find_page(dst, fp->va);
+				memcpy(p->frame->kva, fp->frame->kva, PGSIZE); //
 				}
 			}
+
+			/* 고민 1. vm_alloc_page_with_initializer의 4번째 인자에 도대체 뭐가 들어가야하냐? -> 필요 없어 */
+			/* 고민 2. 고민 1이 해결이 되면, page가 할당되고 spt에도 들어가는데, 여기에 src의 페이지들을 어떻게 복사해주냐? */
 
 		}
 		return true;
