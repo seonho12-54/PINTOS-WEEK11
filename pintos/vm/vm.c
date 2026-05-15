@@ -12,6 +12,26 @@
 static uint64_t page_hash (const struct hash_elem *e, void *aux);
 static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux);
 static void *hash_destructor (struct hash_elem *e, void *aux);
+static bool is_stack_growth_fault (void *addr, void *rsp);
+
+static bool
+is_stack_growth_fault (void *addr, void *rsp) {
+	uint64_t fault = (uint64_t) addr;
+	uint64_t stack_ptr = (uint64_t) rsp;
+	uint64_t stack_bottom = (uint64_t) USER_STACK - (1 << 20);
+	bool ok;
+
+	if (rsp == NULL) {
+		return false;
+	}
+
+	if (fault >= (uint64_t) USER_STACK || fault < stack_bottom) {
+		return false;
+	}
+
+	ok = fault + 8 >= stack_ptr;
+	return ok;
+}
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -198,20 +218,26 @@ vm_stack_growth (void *addr) {
 	 * 1 MiB limit 방어
 	*/
 	void *rsp = thread_current()->rsp;
+	
 	void *cur_addr = rsp;
-	/*현재 할당한 페이지의 시작 주소가 addr보다 작거나 같을 때*/
 
-	while (cur_addr > addr/* && USER_STACK - 1048576 + PGSIZE >= cur_addr*/) {
-		cur_addr = pg_round_down(cur_addr); // 여기 일단 바꿔봤음
+	if (USER_STACK - 1048576 > pg_round_down(cur_addr)) {
+		return;
+	}
+
+	while (cur_addr >= addr) {
+		cur_addr = pg_round_down(cur_addr);
+		if (cur_addr >= addr) {
+			cur_addr -= PGSIZE;
+		}
 		if (!vm_alloc_page(VM_ANON | VM_MARKER_0, cur_addr, true)) {
 			return;
 		}
-		// TODO: 지금 여기서 vm_claim_page 들어가서 SPT에 페이지(d000) 없어야하는데 찾아짐. 왜?
 		if (!vm_claim_page(cur_addr)) {
 			return;
+		}
 	}
-		cur_addr -= PGSIZE;
-	}
+	
 }
 
 /* Handle the fault on write_protected page */
@@ -221,10 +247,12 @@ vm_handle_wp (struct page *page UNUSED) {
 
 /* fault 처리가 성공하면 true를 반환한다. */
 bool
-vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
+vm_try_handle_fault (struct intr_frame *f, void *addr ,
 		bool user , bool write , bool not_present ) {
-	struct supplemental_page_table *spt = &thread_current ()->spt;
+	struct thread *curr = thread_current ();
+	struct supplemental_page_table *spt = &curr->spt;
 	struct page *page = NULL;
+	void *rsp = NULL;
 	/* 잘못된 fault와 권한 위반은 먼저 걸러낸다. */
 	if(addr == NULL || is_kernel_vaddr(addr)) { /* 커널 주소 fault는 사용자 페이지로 처리하지 않는다. */
 		return false;
@@ -234,10 +262,27 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
 		return false;
 	}
 
-	/* TODO: Your code goes here */
 	page = spt_find_page(spt, pg_round_down(addr));
 	if(page == NULL) {
-		return false;
+		rsp = user ? (void *) f->rsp : curr->rsp;
+		if (!is_stack_growth_fault (addr, rsp)) {
+			return false;
+		}
+
+		curr->rsp = rsp;
+		if (pg_round_down (rsp) < pg_round_down (addr)) {
+			curr->rsp = (uint8_t *) pg_round_down (addr) + PGSIZE;
+		}
+		vm_stack_growth (addr);
+		curr->rsp = rsp;
+
+		page = spt_find_page (spt, pg_round_down (addr));
+		if (page == NULL) {
+			return false;
+		}
+		if (page->frame != NULL) {
+			return true;
+		}
 	}
 
 	if(write && !page->writable) { /* 읽기 전용 페이지 쓰기는 거절한다. */
