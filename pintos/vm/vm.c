@@ -221,6 +221,7 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
 	if(addr == NULL || is_kernel_vaddr(addr)) { /* 커널 주소 fault는 사용자 페이지로 처리하지 않는다. */
 		return false;
 	}
+
 	if(!not_present) { /* not-present fault만 여기서 처리한다. */
 		return false;
 	}
@@ -256,8 +257,6 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
 	return vm_do_claim_page (page);
 	
 }
-
-
 
 /* Free the page.
  * DO NOT MODIFY THIS FUNCTION. */
@@ -351,7 +350,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 				}
 
 				/* ANON or FILE 이지만 eviction으로 인해 frame에 없을 경우 이후 swap 구현 시 로직 추가 필요 */
-
+				
 				if(fp->frame != NULL) {
 					/* UNINIT이 아니고 frame이 mapping 되었다면 즉시 claim */
 					vm_claim_page(fp->va);
