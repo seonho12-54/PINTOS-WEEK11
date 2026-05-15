@@ -189,7 +189,26 @@ vm_get_frame (void) {
 
 /* Growing the stack. */
 static void
-vm_stack_growth (void *addr UNUSED) {
+vm_stack_growth (void *addr) {
+	/* 스택 확장 
+	 * round_down한 addr를 포함할 때까지 페이지 늘리기(할당)
+	 * 페이지는 anon 페이지로 + vm마커도 필요함
+	 * rsp 값을 들어온 addr로 수정해야함(내림 x) -> 데이터를 삽입하는 것이 아니기 때문에 나중에 바꿔주는 것이 맞음
+	 * claim 해주기
+	 * 1 MiB limit 방어
+	*/
+	struct intr_frame _if = thread_current()->tf;  // TODO: 이게 맞을까?
+	void *cur_addr = pg_round_down(_if.rsp);
+	
+	/*현재 할당한 페이지의 시작 주소가 addr보다 작거나 같을 때*/
+	while (cur_addr >= addr && USER_STACK - 1048576 + PGSIZE >= cur_addr) {
+		cur_addr -= PGSIZE;
+		if (!vm_alloc_page(VM_ANON | VM_MARKER_0, cur_addr, true)) {
+			return;
+		}
+		vm_claim_page(cur_addr);
+	}
+	//_if.rsp = addr;
 }
 
 /* Handle the fault on write_protected page */
