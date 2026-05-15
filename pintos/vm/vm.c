@@ -197,18 +197,21 @@ vm_stack_growth (void *addr) {
 	 * claim 해주기
 	 * 1 MiB limit 방어
 	*/
-	struct intr_frame _if = thread_current()->tf;  // TODO: 이게 맞을까?
-	void *cur_addr = pg_round_down(_if.rsp);
-	
+	void *rsp = thread_current()->rsp;
+	void *cur_addr = rsp;
 	/*현재 할당한 페이지의 시작 주소가 addr보다 작거나 같을 때*/
-	while (cur_addr >= addr && USER_STACK - 1048576 + PGSIZE >= cur_addr) {
-		cur_addr -= PGSIZE;
+
+	while (cur_addr > addr/* && USER_STACK - 1048576 + PGSIZE >= cur_addr*/) {
+		cur_addr = pg_round_down(cur_addr); // 여기 일단 바꿔봤음
 		if (!vm_alloc_page(VM_ANON | VM_MARKER_0, cur_addr, true)) {
 			return;
 		}
-		vm_claim_page(cur_addr);
+		// TODO: 지금 여기서 vm_claim_page 들어가서 SPT에 페이지(d000) 없어야하는데 찾아짐. 왜?
+		if (!vm_claim_page(cur_addr)) {
+			return;
 	}
-	//_if.rsp = addr;
+		cur_addr -= PGSIZE;
+	}
 }
 
 /* Handle the fault on write_protected page */
