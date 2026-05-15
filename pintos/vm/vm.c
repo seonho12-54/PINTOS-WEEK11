@@ -12,26 +12,6 @@
 static uint64_t page_hash (const struct hash_elem *e, void *aux);
 static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux);
 static void *hash_destructor (struct hash_elem *e, void *aux);
-static bool is_stack_growth_fault (void *addr, void *rsp);
-
-static bool
-is_stack_growth_fault (void *addr, void *rsp) {
-	uint64_t fault = (uint64_t) addr;
-	uint64_t stack_ptr = (uint64_t) rsp;
-	uint64_t stack_bottom = (uint64_t) USER_STACK - (1 << 20);
-	bool ok;
-
-	if (rsp == NULL) {
-		return false;
-	}
-
-	if (fault >= (uint64_t) USER_STACK || fault < stack_bottom) {
-		return false;
-	}
-
-	ok = fault + 8 >= stack_ptr;
-	return ok;
-}
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -247,12 +227,10 @@ vm_handle_wp (struct page *page UNUSED) {
 
 /* fault 처리가 성공하면 true를 반환한다. */
 bool
-vm_try_handle_fault (struct intr_frame *f, void *addr ,
+vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
 		bool user , bool write , bool not_present ) {
-	struct thread *curr = thread_current ();
-	struct supplemental_page_table *spt = &curr->spt;
+	struct supplemental_page_table *spt = &thread_current ()->spt;
 	struct page *page = NULL;
-	void *rsp = NULL;
 	/* 잘못된 fault와 권한 위반은 먼저 걸러낸다. */
 	if(addr == NULL || is_kernel_vaddr(addr)) { /* 커널 주소 fault는 사용자 페이지로 처리하지 않는다. */
 		return false;
@@ -262,27 +240,10 @@ vm_try_handle_fault (struct intr_frame *f, void *addr ,
 		return false;
 	}
 
+	/* TODO: Your code goes here */
 	page = spt_find_page(spt, pg_round_down(addr));
 	if(page == NULL) {
-		rsp = user ? (void *) f->rsp : curr->rsp;
-		if (!is_stack_growth_fault (addr, rsp)) {
-			return false;
-		}
-
-		curr->rsp = rsp;
-		if (pg_round_down (rsp) < pg_round_down (addr)) {
-			curr->rsp = (uint8_t *) pg_round_down (addr) + PGSIZE;
-		}
-		vm_stack_growth (addr);
-		curr->rsp = rsp;
-
-		page = spt_find_page (spt, pg_round_down (addr));
-		if (page == NULL) {
-			return false;
-		}
-		if (page->frame != NULL) {
-			return true;
-		}
+		return false;
 	}
 
 	if(write && !page->writable) { /* 읽기 전용 페이지 쓰기는 거절한다. */
