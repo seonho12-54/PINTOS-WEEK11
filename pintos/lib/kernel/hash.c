@@ -82,6 +82,7 @@ hash_destroy (struct hash *h, hash_action_func *destructor) {
 	if (destructor != NULL)
 		hash_clear (h, destructor);
 	free (h->buckets);
+	h->bucket_cnt = 0;
 }
 
 /* Inserts NEW into hash table H and returns a null pointer, if

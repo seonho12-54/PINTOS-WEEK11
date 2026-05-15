@@ -6,9 +6,12 @@
 #include "threads/mmu.h"
 #include "hash.h"
 #include "threads/vaddr.h"
+#include "lib/string.h"
+#include "userprog/process.h"
 
 static uint64_t page_hash (const struct hash_elem *e, void *aux);
 static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux);
+static void *hash_destructor (struct hash_elem *e, void *aux);
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -285,15 +288,60 @@ supplemental_page_table_init (struct supplemental_page_table *spt) {
 
 /* Copy supplemental page table from src to dst */
 bool
-supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
-		struct supplemental_page_table *src UNUSED) {
+supplemental_page_table_copy (struct supplemental_page_table *dst,
+		struct supplemental_page_table *src) {
+		struct hash_iterator i;
+
+		hash_first(&i, &src->pages);
+		while (hash_next(&i))
+		{	
+			/* 부모 프로세스 정보만 가져와서 uninit으로 다 새로 만들어줘야함.*/
+			struct page *fp = hash_entry(hash_cur(&i), struct page, hash_elem);
+			enum vm_type ty = fp->operations->type; // 이게 현재 페이지의 타입
+			enum vm_type target_ty = page_get_type(fp); // UNINIT일 경우 이건 타겟 타입
+			
+			/* 부모의 SPT에 있는 UNINIT ANON FILE 페이지들을 전부 복사 */
+			
+			if (VM_TYPE(ty) == VM_UNINIT) {
+				struct lazy_load_args *aux = malloc(sizeof *aux); //
+				*aux = *((struct lazy_load_args *)fp->uninit.aux); //
+				if (!aux || !vm_alloc_page_with_initializer(target_ty, fp->va, fp->writable, fp->uninit.init, aux)) {
+					free(aux);
+					return false;
+				}
+			}
+			else {
+				if (!vm_alloc_page(ty, fp->va, fp->writable)) {
+					return false;
+				}
+
+				/* ANON or FILE 이지만 eviction으로 인해 frame에 없을 경우 이후 swap 구현 시 로직 추가 필요 */
+				
+				if(fp->frame != NULL) {
+					/* UNINIT이 아니고 frame이 mapping 되었다면 즉시 claim */
+					vm_claim_page(fp->va);
+					struct page *p = spt_find_page(dst, fp->va);
+					memcpy(p->frame->kva, fp->frame->kva, PGSIZE); //
+				}
+			}
+
+		}
+		return true;
 }
 
 /* Free the resource hold by the supplemental page table */
 void
-supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
+supplemental_page_table_kill (struct supplemental_page_table *spt) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+	if (spt == NULL) {
+		return;
+	}
+
+	hash_destroy(&spt->pages, hash_destructor); /* DESTRUCTOR may, if appropriate, deallocate the memory used by the hash element.*/
+
+	spt->pages.hash = NULL;
+	spt->pages.less = NULL;
 }
 
 /* 해시값의 가상 주소를 해시값으로 바꿔서 SPT 해시 테이블에서 찾기 쉽게 만듦 */
@@ -309,4 +357,19 @@ static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void
 	const struct page *pb = hash_entry(b, struct page, hash_elem);
 
 	return pa->va < pb->va;
+}
+
+/* destructor 구현 필요*/
+
+/* Performs some operation on hash element E, given auxiliary
+ * data AUX. */
+static void *hash_destructor (struct hash_elem *e, void *aux) {
+	// 1. hash_elem page_entry로 page SPT에서 지우기 -> 이거는 hash_clear 에서 list_pop_front로 bucket에서 제거되므로, 괜찮을듯?
+	// 2. page free or dealloc
+	if (e == NULL) {
+		return;
+	}
+
+	struct page *p = hash_entry(e, struct page, hash_elem);
+	vm_dealloc_page(p);
 }
