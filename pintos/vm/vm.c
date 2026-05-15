@@ -242,6 +242,7 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
 
 		if(check_valid_stack_growth(rsp, addr)) {
 			vm_stack_growth(addr);
+			page = spt_find_page(spt, pg_round_down(addr));
 		} else {
 			return false;
 		}
