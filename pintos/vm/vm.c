@@ -12,6 +12,7 @@
 static uint64_t page_hash (const struct hash_elem *e, void *aux);
 static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux);
 static void *hash_destructor (struct hash_elem *e, void *aux);
+bool check_valid_stack_growth(uintptr_t rsp, void * addr);
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -226,12 +227,25 @@ static bool
 vm_handle_wp (struct page *page UNUSED) {
 }
 
+bool
+check_valid_stack_growth(uintptr_t rsp, void * addr) {
+	uintptr_t addr_ptr = addr;
+	uintptr_t lower_bound = rsp - 4000;
+	uintptr_t stack_limit = USER_STACK - (1 << 20);
+	bool cond_near_rsp = addr_ptr >= lower_bound;
+	bool cond_below_rsp = addr_ptr < rsp;
+	bool cond_above_stack_limit = addr_ptr >= stack_limit;
+	bool ok = cond_near_rsp && cond_below_rsp && cond_above_stack_limit;
+	return ok;
+}
+
 /* fault 처리가 성공하면 true를 반환한다. */
 bool
 vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
 		bool user , bool write , bool not_present ) {
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 	struct page *page = NULL;
+
 	/* 잘못된 fault와 권한 위반은 먼저 걸러낸다. */
 	if(addr == NULL || is_kernel_vaddr(addr)) { /* 커널 주소 fault는 사용자 페이지로 처리하지 않는다. */
 		return false;
@@ -242,15 +256,35 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
 	}
 
 	/* TODO: Your code goes here */
-	page = spt_find_page(spt, pg_round_down(addr));
+	page = spt_find_page(spt, addr);
+	 // 커널 모드 / 유저 모드 어디에서 페이지 폴트가 났는지
 	if(page == NULL) {
-		return false;
+		/*
+		커널 모드이면 thread의 rsp를 rsp에 넣어주면 되고
+		유저 모드이면 인터럽트 프레임의 rsp를 rsp에 넣어주면 되지
+		*/
+		uintptr_t rsp;
+		if(user){ // 유저 모드에서 폴트가 났다면...
+			rsp = f->rsp;
+		} else {
+			rsp = thread_current()->rsp;
+		}
+
+		if(check_valid_stack_growth(rsp, addr)) {
+			vm_stack_growth(addr);
+			page = spt_find_page(spt, pg_round_down(addr));
+		} else {
+			return false;
+		}
+
 	}
 
 	if(write && !page->writable) { /* 읽기 전용 페이지 쓰기는 거절한다. */
 		return false;
 	}
+
 	return vm_do_claim_page (page);
+	
 }
 
 /* Free the page.
