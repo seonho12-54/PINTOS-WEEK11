@@ -21,6 +21,7 @@
 #include "intrinsic.h"
 #ifdef VM
 #include "vm/vm.h"
+#include "userprog/syscall.h"
 #endif
 
 
@@ -46,15 +47,6 @@ __do_fork()는 인자를 void * 하나만 받을 수 있어.
 struct initd_args {
 	char *file_name;
 	struct child_status *child_status;
-};
-
-/* 지연 로딩 시 페이지 초기화에 필요한 파일 정보 묶음. */
-struct lazy_load_args {
-	off_t ofs;
-	struct file *file;
-	uint32_t read_bytes;
-	uint32_t zero_bytes; 
-	bool writable;
 };
 
 static void
@@ -121,15 +113,18 @@ duplicate_fd_table(struct thread *parent, struct thread *child)
 		struct file *parent_file = parent->fd_table[fd];
 		if (parent_file == NULL)
 			continue;
-
+		lock_acquire(&filesys_lock);
 		child->fd_table[fd] = file_duplicate(parent_file);
+		lock_release(&filesys_lock);
 		if (child->fd_table[fd] == NULL)
 		{
 			for (int used_fd = 2; used_fd < fd; used_fd++)
 			{
 				if (child->fd_table[used_fd] != NULL)
 				{
+					lock_acquire(&filesys_lock);
 					file_close(child->fd_table[used_fd]);
+					lock_release(&filesys_lock);
 					child->fd_table[used_fd] = NULL;
 				}
 			}
@@ -145,8 +140,9 @@ duplicate_running_file(struct thread *parent, struct thread *child)
 {
 	if (parent->running_file == NULL)
 		return true;
-
+	lock_acquire(&filesys_lock);
 	child->running_file = file_duplicate(parent->running_file);
+	lock_release(&filesys_lock);
 	return child->running_file != NULL;
 }
 
@@ -155,8 +151,9 @@ close_running_file(struct thread *t)
 {
 	if (t->running_file == NULL)
 		return;
-
+	lock_acquire(&filesys_lock);
 	file_close(t->running_file);
+	lock_release(&filesys_lock);
 	t->running_file = NULL;
 }
 
@@ -413,6 +410,7 @@ initd (void *f_name) {
 
 #ifdef VM
 	supplemental_page_table_init (&thread_current ()->spt);
+	lock_init(&filesys_lock);
 #endif
 
 	process_init ();
@@ -584,6 +582,9 @@ __do_fork (void *aux) {
 		goto error;
 	if (!duplicate_running_file(parent, current))
 		goto error;
+	
+	current->stack_bottom = parent->stack_bottom;
+	current->rsp = parent->rsp;
 
 	process_init ();
 	cs->fork_success = true; //복사를 성공하면 부모 프로세스를 꺠웁니다.
@@ -711,6 +712,7 @@ process_exec (void *f_name) {
 	- 권한 관리: 각 단계의 엔트리마다 "이 영역은 읽기 전용인가?", "유저가 접근 가능한가?" 같은 권한 비트를 심어둘 수 있다. 하드웨어가 주소를 찾아 내려가다가 권한이 없는 층을 발견하면 즉시 차단(Segmentation Fault 등)한다.*/
 	
 	process_cleanup ();
+	supplemental_page_table_init(&thread_current()->spt);
 	
 	// TODO: Argument 분리해서 파일명만 load()로 넘기기 
 	// 기능 2: 사용자 스택 레이아웃 구성 부분 시작 (ABI 계약)
@@ -833,7 +835,9 @@ process_exit (void) {
 	{
 		if (curr->fd_table[fd] != NULL)
 		{
+			lock_acquire(&filesys_lock);
 			file_close(curr->fd_table[fd]);
+			lock_release(&filesys_lock);
 			curr->fd_table[fd] = NULL;
 		}
 	}
@@ -959,14 +963,19 @@ load (const char *file_name, struct intr_frame *if_) {
 	process_activate (thread_current ());
 
 	/* Open executable file. */	
+	lock_acquire(&filesys_lock);
 	file = filesys_open (file_name);
+	lock_release(&filesys_lock);
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
+	lock_acquire(&filesys_lock);
 	file_deny_write(file);
+	lock_release(&filesys_lock);
 
 	/* Read and verify executable header. */
+	lock_acquire(&filesys_lock);
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
 			|| ehdr.e_type != 2
@@ -977,7 +986,7 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: error loading executable\n", file_name);
 		goto done;
 	}
-
+	lock_release(&filesys_lock);
 	/* Read program headers. */
 	file_ofs = ehdr.e_phoff;
 	for (i = 0; i < ehdr.e_phnum; i++) {
@@ -985,10 +994,14 @@ load (const char *file_name, struct intr_frame *if_) {
 
 		if (file_ofs < 0 || file_ofs > file_length (file))
 			goto done;
+		lock_acquire(&filesys_lock);
 		file_seek (file, file_ofs);
+		lock_release(&filesys_lock);
 
+		lock_acquire(&filesys_lock);
 		if (file_read (file, &phdr, sizeof phdr) != sizeof phdr)
 			goto done;
+		lock_release(&filesys_lock);
 		file_ofs += sizeof phdr;
 		switch (phdr.p_type) {
 			case PT_NULL:
@@ -1221,15 +1234,18 @@ lazy_load_segment (struct page *page, void *aux) {
 	}
 
 	struct file *file_ = lazy_load_args_->file;
+	lock_acquire(&filesys_lock);
 	file_seek(file_, lazy_load_args_->ofs);
+	lock_release(&filesys_lock);
 	void * kva_ = page->frame->kva;
 	off_t read_bytes_ =  lazy_load_args_->read_bytes;
 	off_t zero_bytes_ = lazy_load_args_->zero_bytes;
+	lock_acquire(&filesys_lock);
 	if(read_bytes_ != file_read(file_, kva_, read_bytes_)) {
 		free(lazy_load_args_);
 		return false;
 	} 
-	
+	lock_release(&filesys_lock);
 	/* 파일에서 읽지 않은 나머지 바이트는 0으로 채운다. */
 	memset((uint8_t *) (page->frame->kva) + read_bytes_, 0, zero_bytes_);
 	free(lazy_load_args_);
@@ -1289,12 +1305,16 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 	return true;
 }
 
-/* USER_STACK 바로 아래에 첫 스택 페이지를 만들고 성공 여부를 반환한다. */
+/*
+ * 초기 사용자 스택을 구성한다.
+ * USER_STACK 바로 아래의 첫 anon 페이지를 SPT에 등록하고 즉시 claim한다. 이후
+ * stack growth가 아래로 내려갈 기준 주소를 알 수 있도록 stack_bottom을 저장하고,
+ * 실제 사용자 rsp는 빈 스택의 최상단인 USER_STACK에서 시작시킨다.
+ */
 static bool
 setup_stack (struct intr_frame *if_) {
 	void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
 	
-	/* 초기 스택은 fault를 기다리지 않고 바로 확보한다. */
 	if(!vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, true)) { 
 		return false;
 	}
@@ -1304,6 +1324,7 @@ setup_stack (struct intr_frame *if_) {
 	}
 
 	if_->rsp = USER_STACK;
+	thread_current()->stack_bottom = stack_bottom;
 	return true;
 }
 #endif /* VM */

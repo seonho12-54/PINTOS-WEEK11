@@ -22,14 +22,6 @@
 #include "filesys/file.h"  // file_write 함수
 #include "devices/input.h" //sys_read
 
-// 평소에는 꺼두기
-#define USER_MEM_DEBUG 0
-#if USER_MEM_DEBUG
-#define user_mem_debug(...) printf(__VA_ARGS__)
-#else
-#define user_mem_debug(...) ((void)0)
-#endif
-
 void syscall_entry(void);
 void syscall_handler(struct intr_frame *);
 
@@ -59,7 +51,7 @@ static bool is_valid_user_ptr(const void *uaddr);
 static void validate_user_ptr(const void *uaddr);
 static void validate_user_buffer(const void *buffer, size_t size);
 static void validate_user_string(const char *str);
-static struct lock filesys_lock;
+struct lock filesys_lock;
 
 /* System call.
  *
@@ -119,22 +111,21 @@ is_valid_user_ptr(const void *uaddr)
 	// NULL 포인터를 실패 처리한다.
 	if (uaddr == NULL)
 	{
-		user_mem_debug("invalid user ptr: NULL\n");
 		return false;
 	}
 
 	// is_user_vaddr()로 커널 주소를 차단한다.
 	if (!is_user_vaddr((void *)uaddr))
 	{
-		user_mem_debug("invalid user ptr: kernel addr %p\n", uaddr);
 		return false;
 	}
 
 	// 현재 thread의 page table에서 매핑 여부를 확인한다.
 	if (pml4_get_page(thread_current()->pml4, (void *)uaddr) == NULL)
 	{
-		user_mem_debug("invalid user ptr: unmapped %p\n", uaddr);
-		return false;
+		if(!spt_find_page(&thread_current()->spt, pg_round_down(uaddr))) {
+			return false;
+		}
 	}
 
 	return true;
@@ -240,6 +231,26 @@ static int sys_write(int fd, const void *buffer, unsigned size)
 		return -1;
 	}
 
+	const uint8_t *first_page = pg_round_down(buffer);
+	const uint8_t *last_page =
+		(const uint8_t *) pg_round_down((const uint8_t *) buffer + size - 1);
+	for (const uint8_t *va = first_page;
+		va <= last_page;
+		va += PGSIZE) 
+		{
+			struct page *p = spt_find_page(&thread_current()->spt, va);
+			if (p == NULL) {
+				sys_exit(-1);
+			}
+
+			enum vm_type type = VM_TYPE(p->operations->type);
+			if (type == VM_UNINIT) {
+				if (!vm_claim_page(va)) {
+					sys_exit(-1);
+				}
+			}
+		}
+
 	// fd_table[fd]의 file*를 가져옴
 	file = find_file_by_fd(fd);
 	if (file == NULL)
@@ -280,13 +291,45 @@ static int sys_read(int fd, void *buffer, unsigned size)
 	struct file *file;
 	validate_user_buffer(buffer, size);
 	if (size == 0)
+	{
 		return 0;
+	}
 	if (fd == 1)
+	{
 		return -1;
+	}
 	if (fd < 0)
+	{
 		return -1;
+	}
 	if (fd >= ARG_MAX)
+	{
 		return -1;
+	}
+
+	const uint8_t *first_page = pg_round_down(buffer);
+	const uint8_t *last_page =
+		(const uint8_t *) pg_round_down((const uint8_t *) buffer + size - 1);
+	for (const uint8_t *va = first_page;
+		va <= last_page;
+		va += PGSIZE) 
+		{
+			struct page *p = spt_find_page(&thread_current()->spt, va);
+			if (p == NULL) {
+				sys_exit(-1);
+			}
+
+			enum vm_type type = VM_TYPE(p->operations->type);
+			if (!p->writable) {
+				sys_exit(-1);
+			}
+
+			if (type == VM_UNINIT) {
+				if (!vm_claim_page(va)) {
+					sys_exit(-1);
+				}
+			}
+		}
 
 	if (fd == 0) // 표준입력,  size만큼 반복, 문자 하나를 읽어서 버퍼에 저장후, size반환
 	{
@@ -301,7 +344,9 @@ static int sys_read(int fd, void *buffer, unsigned size)
 	{
 		file = find_file_by_fd(fd);
 		if (file == NULL)
+		{
 			return -1;
+		}
 		lock_acquire(&filesys_lock);
 		int bytes = file_read(file, buffer, size);
 		lock_release(&filesys_lock);
@@ -475,12 +520,16 @@ sys_halt(void)
 	power_off();
 }
 
-/* The main system call interface */
+/*
+ * 시스템콜의 공통 진입점이다.
+ * syscall 전환 이후 커널 모드에서 page fault가 나면 intr_frame의 rsp가 사용자 rsp를
+ * 보장하지 않으므로, 진입 시점의 사용자 rsp를 thread에 먼저 보존한다. 이후 rax에
+ * 담긴 시스템콜 번호를 기준으로 각 syscall 구현으로 분기한다.
+ */
 void syscall_handler(struct intr_frame *f UNUSED)
 {
-	// 10번이 SYS_WRITE
 	int sys_call = f->R.rax;
-
+	thread_current()->rsp = f->rsp;
 	switch (sys_call)
 	{
 	case SYS_WRITE:

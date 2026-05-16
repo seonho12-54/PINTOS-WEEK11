@@ -139,8 +139,14 @@ struct thread {
 	struct file *running_file;          // 실행 파일.
 
 #ifdef VM
-	/* Table for whole virtual memory owned by thread. */
+	/*
+	 * VM 프로젝트에서 프로세스별 보조 페이지 테이블과 stack growth 상태를 함께 보관한다.
+	 * stack_bottom은 stack growth가 내려가기 시작할 기준 주소로 사용하고, rsp는 커널 모드에서
+	 * page fault가 발생했을 때도 마지막 사용자 스택 포인터를 복원하기 위해 저장한다.
+	 */
 	struct supplemental_page_table spt;
+	void *stack_bottom;
+	uintptr_t rsp;
 #endif
 
 	/* Owned by thread.c. */
