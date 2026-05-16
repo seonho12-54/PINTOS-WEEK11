@@ -183,11 +183,6 @@ validate_user_string(const char *str)
 	}
 }
 
-static bool validate_resident(const void *buffer, unsigned size) {
-
-	return true;
-}
-
 // 기본 헬퍼 함수
 static struct file *find_file_by_fd(int fd)
 {
