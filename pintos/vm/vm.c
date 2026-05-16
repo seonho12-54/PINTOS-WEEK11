@@ -197,11 +197,12 @@ vm_stack_growth (void *addr) {
 	 * claim 해주기
 	 * 1 MiB limit 방어
 	*/
-	void *rsp = thread_current()->rsp;
+	void *rsp = (void *)thread_current()->rsp;
 	
 	void *cur_addr = rsp;
 
-	if (USER_STACK - 1048576 > pg_round_down(cur_addr)) {
+	// main 머지 전에 이 부분 지우고 확인해보기
+	if (USER_STACK - (1 << 20) > pg_round_down(cur_addr)) {
 		return;
 	}
 
