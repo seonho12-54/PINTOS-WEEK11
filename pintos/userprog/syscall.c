@@ -477,12 +477,16 @@ sys_halt(void)
 	power_off();
 }
 
-/* The main system call interface */
+/*
+ * 시스템콜의 공통 진입점이다.
+ * syscall 전환 이후 커널 모드에서 page fault가 나면 intr_frame의 rsp가 사용자 rsp를
+ * 보장하지 않으므로, 진입 시점의 사용자 rsp를 thread에 먼저 보존한다. 이후 rax에
+ * 담긴 시스템콜 번호를 기준으로 각 syscall 구현으로 분기한다.
+ */
 void syscall_handler(struct intr_frame *f UNUSED)
 {
-	// 10번이 SYS_WRITE
 	int sys_call = f->R.rax;
-	thread_current()->rsp = f->rsp; //syscall 진입 시 user rsp 보존
+	thread_current()->rsp = f->rsp;
 	switch (sys_call)
 	{
 	case SYS_WRITE:

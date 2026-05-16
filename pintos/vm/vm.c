@@ -188,17 +188,16 @@ vm_get_frame (void) {
   return frame_;
 }
 
-/* Growing the stack. */
+/*
+ * stack growth로 확정된 fault 주소를 포함할 때까지 스택 페이지를 늘린다.
+ * 저장된 stack_bottom을 기준으로 아래쪽 주소에 anonymous stack page를 만들고,
+ * 각 페이지를 SPT에 등록한 뒤 즉시 claim한다. 1 MiB 제한과 rsp 근접성 검사는
+ * 이 함수에 들어오기 전에 check_valid_stack_growth()가 담당한다.
+ */
 static void
 vm_stack_growth (void *addr) {
-	/* 스택 확장 
-	 * addr를 포함할 때까지 스택 페이지 할당해주기
-	 * 페이지는 anon 페이지로 + vm마커도 필요함
-	 * 할당 이후 claim 해주기
-	 * 1 MiB limit 방어는 stack growth 판별 로직에서 진행
-	*/
 	void *sb = thread_current()->stack_bottom;
-	
+
 	void *cur_addr = sb;
 
 	while (cur_addr >= addr) {
@@ -217,6 +216,11 @@ static bool
 vm_handle_wp (struct page *page UNUSED) {
 }
 
+/*
+ * fault 주소가 stack growth로 처리할 수 있는 접근인지 판별한다.
+ * 호출자가 넘긴 사용자 rsp를 기준으로 너무 멀리 떨어진 접근, rsp보다 위쪽인 접근,
+ * USER_STACK에서 1 MiB를 넘겨 내려가는 접근을 제외한다.
+ */
 bool
 check_valid_stack_growth(uintptr_t rsp, void * addr) {
 	uintptr_t addr_ptr = addr;
@@ -229,32 +233,31 @@ check_valid_stack_growth(uintptr_t rsp, void * addr) {
 	return ok;
 }
 
-/* fault 처리가 성공하면 true를 반환한다. */
+/*
+ * page fault를 VM 계층에서 처리한다.
+ * NULL/커널 주소 접근과 not-present가 아닌 fault를 먼저 거절한다. SPT에 페이지가
+ * 이미 있으면 쓰기 권한을 확인한 뒤 claim하고, 없으면 stack growth 후보인지 검사한다.
+ * 사용자 모드 fault는 intr_frame의 rsp를, 커널 모드 fault는 syscall 진입 때 thread에
+ * 저장한 rsp를 기준으로 성장 가능성을 판단한다.
+ */
 bool
 vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
 		bool user , bool write , bool not_present ) {
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 	struct page *page = NULL;
 
-	/* 잘못된 fault와 권한 위반은 먼저 걸러낸다. */
-	if(addr == NULL || is_kernel_vaddr(addr)) { /* 커널 주소 fault는 사용자 페이지로 처리하지 않는다. */
+	if(addr == NULL || is_kernel_vaddr(addr)) {
 		return false;
 	}
 
-	if(!not_present) { /* not-present fault만 여기서 처리한다. */
+	if(!not_present) {
 		return false;
 	}
 
-	/* TODO: Your code goes here */
 	page = spt_find_page(spt, addr);
-	 // 커널 모드 / 유저 모드 어디에서 페이지 폴트가 났는지
 	if(page == NULL) {
-		/*
-		커널 모드이면 thread의 rsp를 rsp에 넣어주면 되고
-		유저 모드이면 인터럽트 프레임의 rsp를 rsp에 넣어주면 되지
-		*/
 		uintptr_t rsp;
-		if(user){ // 유저 모드에서 폴트가 났다면...
+		if(user){
 			rsp = f->rsp;
 		} else {
 			rsp = thread_current()->rsp;
@@ -269,7 +272,7 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
 
 	}
 
-	if(write && !page->writable) { /* 읽기 전용 페이지 쓰기는 거절한다. */
+	if(write && !page->writable) {
 		return false;
 	}
 

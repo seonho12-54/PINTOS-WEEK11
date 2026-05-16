@@ -1281,12 +1281,16 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 	return true;
 }
 
-/* USER_STACK 바로 아래에 첫 스택 페이지를 만들고 성공 여부를 반환한다. */
+/*
+ * 초기 사용자 스택을 구성한다.
+ * USER_STACK 바로 아래의 첫 anon 페이지를 SPT에 등록하고 즉시 claim한다. 이후
+ * stack growth가 아래로 내려갈 기준 주소를 알 수 있도록 stack_bottom을 저장하고,
+ * 실제 사용자 rsp는 빈 스택의 최상단인 USER_STACK에서 시작시킨다.
+ */
 static bool
 setup_stack (struct intr_frame *if_) {
 	void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
 	
-	/* 초기 스택은 fault를 기다리지 않고 바로 확보한다. */
 	if(!vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, true)) { 
 		return false;
 	}
