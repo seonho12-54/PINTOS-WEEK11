@@ -195,26 +195,7 @@ validate_user_string(const char *str)
 }
 
 static bool validate_resident(const void *buffer, unsigned size) {
-	for (const uint8_t *va = pg_round_down(buffer);
-		va <= (const uint8_t *)pg_round_down((const uint8_t *)buffer + size - 1);
-		va += PGSIZE) 
-		{
-			struct page *p = spt_find_page(&thread_current()->spt, va);
-			if (p == NULL) {
-				return false;
-			}
 
-			if (!p->writable) {
-				return false;
-			}
-
-			enum vm_type type = VM_TYPE(p->operations->type);
-			if (type == VM_UNINIT) {
-				if (!vm_claim_page(va)) {
-					return false;
-				}
-			}
-		}
 	return true;
 }
 
@@ -266,9 +247,25 @@ static int sys_write(int fd, const void *buffer, unsigned size)
 		return -1;
 	}
 
-	if (!validate_resident(buffer, size)) {
-		return -1;
-	}
+	const uint8_t *first_page = pg_round_down(buffer);
+	const uint8_t *last_page =
+		(const uint8_t *) pg_round_down((const uint8_t *) buffer + size - 1);
+	for (const uint8_t *va = first_page;
+		va <= last_page;
+		va += PGSIZE) 
+		{
+			struct page *p = spt_find_page(&thread_current()->spt, va);
+			if (p == NULL) {
+				sys_exit(-1);
+			}
+
+			enum vm_type type = VM_TYPE(p->operations->type);
+			if (type == VM_UNINIT) {
+				if (!vm_claim_page(va)) {
+					sys_exit(-1);
+				}
+			}
+		}
 
 	// fd_table[fd]의 file*를 가져옴
 	file = find_file_by_fd(fd);
@@ -310,17 +307,45 @@ static int sys_read(int fd, void *buffer, unsigned size)
 	struct file *file;
 	validate_user_buffer(buffer, size);
 	if (size == 0)
+	{
 		return 0;
+	}
 	if (fd == 1)
-		return -1;
-	if (fd < 0)
-		return -1;
-	if (fd >= ARG_MAX)
-		return -1;
-
-	if (!validate_resident(buffer, size)) {
+	{
 		return -1;
 	}
+	if (fd < 0)
+	{
+		return -1;
+	}
+	if (fd >= ARG_MAX)
+	{
+		return -1;
+	}
+
+	const uint8_t *first_page = pg_round_down(buffer);
+	const uint8_t *last_page =
+		(const uint8_t *) pg_round_down((const uint8_t *) buffer + size - 1);
+	for (const uint8_t *va = first_page;
+		va <= last_page;
+		va += PGSIZE) 
+		{
+			struct page *p = spt_find_page(&thread_current()->spt, va);
+			if (p == NULL) {
+				sys_exit(-1);
+			}
+
+			enum vm_type type = VM_TYPE(p->operations->type);
+			if (!p->writable) {
+				sys_exit(-1);
+			}
+
+			if (type == VM_UNINIT) {
+				if (!vm_claim_page(va)) {
+					sys_exit(-1);
+				}
+			}
+		}
 
 	if (fd == 0) // 표준입력,  size만큼 반복, 문자 하나를 읽어서 버퍼에 저장후, size반환
 	{
@@ -335,7 +360,9 @@ static int sys_read(int fd, void *buffer, unsigned size)
 	{
 		file = find_file_by_fd(fd);
 		if (file == NULL)
+		{
 			return -1;
+		}
 		lock_acquire(&filesys_lock);
 		int bytes = file_read(file, buffer, size);
 		lock_release(&filesys_lock);
