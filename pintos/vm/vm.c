@@ -201,6 +201,7 @@ vm_stack_growth (void *addr) {
 	
 	void *cur_addr = sb;
 
+	// main 머지 전에 이 부분 지우고 확인해보기
 	if (USER_STACK - (1 << 20) > pg_round_down(cur_addr)) {
 		return;
 	}
