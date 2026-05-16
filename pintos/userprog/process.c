@@ -21,6 +21,7 @@
 #include "intrinsic.h"
 #ifdef VM
 #include "vm/vm.h"
+#include "userprog/syscall.h"
 #endif
 
 
@@ -112,15 +113,18 @@ duplicate_fd_table(struct thread *parent, struct thread *child)
 		struct file *parent_file = parent->fd_table[fd];
 		if (parent_file == NULL)
 			continue;
-
+		lock_acquire(&filesys_lock);
 		child->fd_table[fd] = file_duplicate(parent_file);
+		lock_release(&filesys_lock);
 		if (child->fd_table[fd] == NULL)
 		{
 			for (int used_fd = 2; used_fd < fd; used_fd++)
 			{
 				if (child->fd_table[used_fd] != NULL)
 				{
+					lock_acquire(&filesys_lock);
 					file_close(child->fd_table[used_fd]);
+					lock_release(&filesys_lock);
 					child->fd_table[used_fd] = NULL;
 				}
 			}
@@ -136,8 +140,9 @@ duplicate_running_file(struct thread *parent, struct thread *child)
 {
 	if (parent->running_file == NULL)
 		return true;
-
+	lock_acquire(&filesys_lock);
 	child->running_file = file_duplicate(parent->running_file);
+	lock_release(&filesys_lock);
 	return child->running_file != NULL;
 }
 
@@ -146,8 +151,9 @@ close_running_file(struct thread *t)
 {
 	if (t->running_file == NULL)
 		return;
-
+	lock_acquire(&filesys_lock);
 	file_close(t->running_file);
+	lock_release(&filesys_lock);
 	t->running_file = NULL;
 }
 
@@ -404,6 +410,7 @@ initd (void *f_name) {
 
 #ifdef VM
 	supplemental_page_table_init (&thread_current ()->spt);
+	lock_init(&filesys_lock);
 #endif
 
 	process_init ();
@@ -828,7 +835,9 @@ process_exit (void) {
 	{
 		if (curr->fd_table[fd] != NULL)
 		{
+			lock_acquire(&filesys_lock);
 			file_close(curr->fd_table[fd]);
+			lock_release(&filesys_lock);
 			curr->fd_table[fd] = NULL;
 		}
 	}
@@ -954,14 +963,19 @@ load (const char *file_name, struct intr_frame *if_) {
 	process_activate (thread_current ());
 
 	/* Open executable file. */	
+	lock_acquire(&filesys_lock);
 	file = filesys_open (file_name);
+	lock_release(&filesys_lock);
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
+	lock_acquire(&filesys_lock);
 	file_deny_write(file);
+	lock_release(&filesys_lock);
 
 	/* Read and verify executable header. */
+	lock_acquire(&filesys_lock);
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
 			|| ehdr.e_type != 2
@@ -972,7 +986,7 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: error loading executable\n", file_name);
 		goto done;
 	}
-
+	lock_release(&filesys_lock);
 	/* Read program headers. */
 	file_ofs = ehdr.e_phoff;
 	for (i = 0; i < ehdr.e_phnum; i++) {
@@ -980,10 +994,14 @@ load (const char *file_name, struct intr_frame *if_) {
 
 		if (file_ofs < 0 || file_ofs > file_length (file))
 			goto done;
+		lock_acquire(&filesys_lock);
 		file_seek (file, file_ofs);
+		lock_release(&filesys_lock);
 
+		lock_acquire(&filesys_lock);
 		if (file_read (file, &phdr, sizeof phdr) != sizeof phdr)
 			goto done;
+		lock_release(&filesys_lock);
 		file_ofs += sizeof phdr;
 		switch (phdr.p_type) {
 			case PT_NULL:
@@ -1216,15 +1234,18 @@ lazy_load_segment (struct page *page, void *aux) {
 	}
 
 	struct file *file_ = lazy_load_args_->file;
+	lock_acquire(&filesys_lock);
 	file_seek(file_, lazy_load_args_->ofs);
+	lock_release(&filesys_lock);
 	void * kva_ = page->frame->kva;
 	off_t read_bytes_ =  lazy_load_args_->read_bytes;
 	off_t zero_bytes_ = lazy_load_args_->zero_bytes;
+	lock_acquire(&filesys_lock);
 	if(read_bytes_ != file_read(file_, kva_, read_bytes_)) {
 		free(lazy_load_args_);
 		return false;
 	} 
-	
+	lock_release(&filesys_lock);
 	/* 파일에서 읽지 않은 나머지 바이트는 0으로 채운다. */
 	memset((uint8_t *) (page->frame->kva) + read_bytes_, 0, zero_bytes_);
 	free(lazy_load_args_);
