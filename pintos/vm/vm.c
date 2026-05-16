@@ -190,7 +190,36 @@ vm_get_frame (void) {
 
 /* Growing the stack. */
 static void
-vm_stack_growth (void *addr UNUSED) {
+vm_stack_growth (void *addr) {
+	/* 스택 확장 
+	 * round_down한 addr를 포함할 때까지 페이지 늘리기(할당)
+	 * 페이지는 anon 페이지로 + vm마커도 필요함
+	 * rsp 값을 들어온 addr로 수정해야함(내림 x) -> 데이터를 삽입하는 것이 아니기 때문에 나중에 바꿔주는 것이 맞음
+	 * claim 해주기
+	 * 1 MiB limit 방어
+	*/
+	void *sb = thread_current()->stack_bottom;
+	
+	void *cur_addr = sb;
+
+	// main 머지 전에 이 부분 지우고 확인해보기
+	if (USER_STACK - (1 << 20) > pg_round_down(cur_addr)) {
+		return;
+	}
+
+	while (cur_addr >= addr) {
+		cur_addr = pg_round_down(cur_addr);
+		if (cur_addr >= addr) {
+			cur_addr -= PGSIZE;
+		}
+		if (!vm_alloc_page(VM_ANON | VM_MARKER_0, cur_addr, true)) {
+			return;
+		}
+		if (!vm_claim_page(cur_addr)) {
+			return;
+		}
+	}
+	 /* round_up을 해서 페이지가 있을 때까지 계속 올리기 */
 }
 
 /* Handle the fault on write_protected page */
