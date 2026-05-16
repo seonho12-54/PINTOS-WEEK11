@@ -224,11 +224,11 @@ bool
 check_valid_stack_growth(uintptr_t rsp, void * addr) {
 	uintptr_t addr_ptr = addr;
 	uintptr_t lower_bound = rsp - 4000;
+	uintptr_t upper_bound = rsp + 4000;
 	uintptr_t stack_limit = USER_STACK - (1 << 20);
-	bool cond_near_rsp = addr_ptr >= lower_bound;
-	bool cond_below_rsp = addr_ptr < rsp;
+	bool cond_near_rsp = addr_ptr >= lower_bound && addr_ptr <= upper_bound;
 	bool cond_above_stack_limit = addr_ptr >= stack_limit;
-	bool ok = cond_near_rsp && cond_below_rsp && cond_above_stack_limit;
+	bool ok = cond_near_rsp && cond_above_stack_limit;
 	return ok;
 }
 
@@ -244,6 +244,7 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
 		bool user , bool write , bool not_present ) {
 	struct supplemental_page_table *spt = &thread_current ()->spt;
 	struct page *page = NULL;
+	bool ok = false;
 
 	if(addr == NULL || is_kernel_vaddr(addr)) {
 		return false;
@@ -279,7 +280,8 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
 		return false;
 	}
 
-	return vm_do_claim_page (page);
+	ok = vm_do_claim_page (page);
+	return ok;
 	
 }
 
@@ -295,10 +297,12 @@ vm_dealloc_page (struct page *page) {
 bool
 vm_claim_page (void *va UNUSED) {
   struct page *page_ = NULL;
+  bool ok = false;
   /* 스택 성장 전에는 SPT에 등록된 페이지만 즉시 claim한다. */
   page_ = spt_find_page (&(thread_current ()->spt), va);
   if (page_ != NULL) {
-    return vm_do_claim_page (page_);
+    ok = vm_do_claim_page (page_);
+    return ok;
   }
   else {
     PANIC ("todo"); /* 스택 성장 경로는 이후 단계에서 추가한다. */

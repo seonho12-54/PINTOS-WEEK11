@@ -3,5 +3,6 @@
 
 void syscall_init (void);
 void sys_exit(int status);
+extern struct lock filesys_lock;
 
 #endif /* userprog/syscall.h */
