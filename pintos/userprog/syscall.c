@@ -482,7 +482,7 @@ void syscall_handler(struct intr_frame *f UNUSED)
 {
 	// 10번이 SYS_WRITE
 	int sys_call = f->R.rax;
-
+	thread_current()->rsp = f->rsp; //syscall 진입 시 user rsp 보존
 	switch (sys_call)
 	{
 	case SYS_WRITE:
