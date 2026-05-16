@@ -363,9 +363,13 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 			/* 부모의 SPT에 있는 UNINIT ANON FILE 페이지들을 전부 복사 */
 			
 			if (VM_TYPE(ty) == VM_UNINIT) {
-				struct lazy_load_args *aux = malloc(sizeof *aux); //
-				*aux = *((struct lazy_load_args *)fp->uninit.aux); //
-				if (!aux || !vm_alloc_page_with_initializer(target_ty, fp->va, fp->writable, fp->uninit.init, aux)) {
+				struct lazy_load_args *aux = malloc(sizeof *aux);
+				if (!aux) {
+					free(aux);
+					return false;
+				}
+				*aux = *((struct lazy_load_args *)fp->uninit.aux);
+				if (!vm_alloc_page_with_initializer(target_ty, fp->va, fp->writable, fp->uninit.init, aux)) {
 					free(aux);
 					return false;
 				}
