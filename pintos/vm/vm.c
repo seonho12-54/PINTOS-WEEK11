@@ -227,7 +227,7 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
 	}
 
 	/* TODO: Your code goes here */
-	page = spt_find_page(spt, pg_round_down(addr));
+	page = spt_find_page(spt, addr);
 	 // 커널 모드 / 유저 모드 어디에서 페이지 폴트가 났는지
 	if(page == NULL) {
 		/*
