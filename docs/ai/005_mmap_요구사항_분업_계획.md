@@ -112,22 +112,24 @@ reference에서 명시된 실패 조건은 다음과 같다.
 | 페어 A에 보장해야 하는 것 | 해당 없음 | `do_mmap` 성공/실패 반환, `do_munmap` 후 mapping 제거, cleanup 경로의 일관성 |
 | 먼저 볼 테스트 | invalid mmap 계열 | read/write/cleanup 계열 |
 
-## 의존성 지도
+## 파트 분리 원칙
 
-아래 순서의 의존성을 기준으로 작업하면 충돌과 재작업이 줄어든다.
+각 페어는 자기 파트의 요구사항과 테스트 통과를 책임진다. 자기 파트가 아닌 영역은 AI를 이용해 검증용 임시 구현을 둘 수 있지만, 그 임시 구현은 본인 파트 검증을 위한 scaffolding으로만 취급한다. 최종 통합 전에는 임시 구현 여부를 PR 본문과 리뷰에서 명확히 드러내고, 상대 페어의 실제 구현과 맞춰 다시 확인한다.
 
-| 순서 | 의존성 | 선행 담당 | 후행 담당 | 후행 작업이 기대하는 상태 |
-| --- | --- | --- | --- | --- |
-| 1 | syscall 번호와 dispatcher 연결 | 페어 A | 페어 B | 사용자 `mmap`/`munmap` 호출이 kernel 내부 함수까지 도달한다. |
-| 2 | fd와 인자 검증 | 페어 A | 페어 B | `do_mmap`은 mmap 가능한 file과 정렬된 주소/offset만 받는다고 가정할 수 있다. |
-| 3 | overlap 검사 정책 | 페어 A 주도, 페어 B 합의 | 페어 B | `do_mmap`이 중간 실패 정리를 하더라도 애초에 겹치는 range는 들어오지 않는다. |
-| 4 | file-backed metadata 형태 | 페어 B 주도, 페어 A 합의 | 페어 A | syscall layer가 `do_mmap`에 넘길 정보와 반환 의미를 안다. |
-| 5 | lazy fault-in | 페어 B | 페어 A | syscall의 user buffer 검증이 mmap page fault와 충돌하지 않는다. |
-| 6 | dirty write-back과 munmap | 페어 B | 페어 A | `munmap(addr)` syscall은 VM layer에 위임해 mapping 전체를 정리할 수 있다. |
-| 7 | process exit cleanup | 페어 B | 두 페어 | explicit `munmap` 없이 종료해도 file-backed page destroy 경로가 요구사항을 만족한다. |
-| 8 | 통합 회귀 | 두 페어 | 두 페어 | mmap 구현이 기존 syscall user memory, stack growth, lazy loading 테스트를 깨지 않는다. |
+| 구분 | 페어 A: syscall/검증 파트 | 페어 B: file-backed VM 파트 |
+| --- | --- | --- |
+| 책임지는 요구사항 | mmap syscall 진입 조건, 실패 조건, overlap 방어, 반환 정책 | file-backed page 등록, lazy load, write-back, munmap, cleanup |
+| 본인 로직 검증에 필요한 비소유 파트 | `do_mmap`, `do_munmap`, file-backed page 동작 | `SYS_MMAP`, `SYS_MUNMAP`, fd/주소 검증 |
+| 비소유 파트 처리 방식 | 테스트용 임시 VM 구현을 둘 수 있음 | 테스트용 임시 syscall 구현을 둘 수 있음 |
+| 임시 구현의 지위 | 페어 A 테스트를 돌리기 위한 보조 코드이며 최종 소유 코드는 아님 | 페어 B 테스트를 돌리기 위한 보조 코드이며 최종 소유 코드는 아님 |
+| 최종 통합 때 확인할 것 | 임시 VM 가정이 페어 B 실제 구현과 충돌하지 않는지 | 임시 syscall 가정이 페어 A 실제 구현과 충돌하지 않는지 |
 
-페어별로 독립 작업을 시작하더라도 2, 3, 4번은 반드시 짧게 합의하고 진행한다. 특히 overlap 검사와 mapping 범위 추적 방식은 두 페어가 동시에 가정하면 충돌 가능성이 높다.
+두 페어가 반드시 이름과 의미만 맞춰야 하는 접점은 다음 네 가지다.
+
+- `do_mmap(addr, length, writable, file, offset)`의 입력 전제와 실패 반환
+- `do_munmap(addr)`가 해제해야 하는 mapping 범위 기준
+- file-backed page metadata에 들어갈 필수 정보
+- overlap 검사를 syscall 쪽에서만 할지, VM 쪽에서도 방어적으로 반복할지
 
 ## 페어 구성
 
@@ -280,34 +282,37 @@ reference에서 명시된 실패 조건은 다음과 같다.
 - `supplemental_page_table_copy()`에서 file-backed page를 복사할지, exec 이후 정리만 신뢰할지
 - dirty 여부를 MMU dirty bit만으로 볼지, 추가 page state와 함께 볼지
 
-## 작업 순서 제안
+## 페어별 독립 작업 범위와 검증 루트
 
-### 0단계: 베이스라인 확인
+이 섹션은 작업 순서를 강제하지 않는다. 각 페어는 자기 파트를 먼저 구현하고, 나머지 파트는 검증용 임시 구현으로 채워 테스트를 돌릴 수 있다.
 
-목표:
+### 공통 베이스라인
 
-- mmap 구현 전 현재 브랜치가 mmap 작업을 시작할 수 있는 상태인지 확인한다.
-- 이 단계는 mmap 요구사항 구현이 아니라 이후 테스트 결과를 해석하기 위한 기준선 정리다.
-
-확인 기준:
-
-- 최소한 `syscall.c`, `vm/file.c`, `vm/vm.c`, `process.c`의 현재 상태와 미구현 stub 위치를 두 페어가 공유해야 한다.
-- 이미 해결된 컴파일 에러를 문서상 남은 blocker로 취급하지 않는다.
+- 현재 브랜치의 미구현 지점을 먼저 공유한다.
+- 이미 해결된 컴파일 에러를 남은 blocker로 취급하지 않는다.
 - 기존 uncommitted 변경이 있다면 mmap 작업과 섞지 않는다.
+- 테스트용 임시 구현은 커밋 메시지나 PR 설명에서 명확히 구분한다.
 
-### 1단계: 실패 조건과 syscall 연결
+### 페어 A 파트: syscall 진입과 실패 조건
 
-담당:
+페어 A가 직접 책임지는 것:
 
-- 페어 A 주도, 페어 B 리뷰
+- `SYS_MMAP`, `SYS_MUNMAP` dispatcher 연결
+- fd table 기준 fd 검증
+- stdin/stdout fd 거절
+- `addr == NULL`, misaligned `addr`, `length == 0`, misaligned `offset` 거절
+- kernel 주소 범위 거절
+- 기존 SPT page, code/data page, stack page, 기존 mmap page와 겹치는 range 거절
+- 실패 시 `MAP_FAILED` 또는 테스트가 허용하는 종료 정책 정리
+- `do_mmap`, `do_munmap` 호출 전후의 반환값 계약 정리
 
-목표:
+페어 A가 자기 로직 검증을 위해 임시로 채워도 되는 것:
 
-- syscall dispatcher에서 `mmap`/`munmap`이 호출 가능한 상태를 만든다.
-- invalid argument 테스트들이 성공 mapping을 만들지 않게 한다.
-- 이 단계에서는 file-backed lazy loading 전체가 완성되지 않아도 된다.
+- `do_mmap`이 성공/실패를 단순히 반환하도록 하는 테스트용 구현
+- `do_munmap`이 호출 여부만 확인할 수 있는 테스트용 구현
+- file-backed page 내부 동작을 완성하지 않은 상태의 최소 stub
 
-목표 테스트:
+페어 A의 우선 목표 테스트:
 
 - `mmap-null`
 - `mmap-misalign`
@@ -322,84 +327,66 @@ reference에서 명시된 실패 조건은 다음과 같다.
 - `mmap-over-data`
 - `mmap-over-stk`
 
-### 2단계: lazy file-backed read path
+페어 A가 완료했다고 말하려면:
 
-담당:
+- invalid mmap 요청이 성공 mapping으로 남지 않는다.
+- valid 요청만 VM layer로 전달된다.
+- 어떤 검증을 syscall layer에서 하고 어떤 검증을 VM layer에 맡기는지 설명할 수 있다.
+- 임시 VM 구현 없이 페어 B 실제 구현과 붙였을 때도 같은 실패 조건이 유지된다.
 
-- 페어 B 주도, 페어 A syscall boundary 리뷰
+### 페어 B 파트: file-backed page와 mapping 생명주기
 
-목표:
+페어 B가 직접 책임지는 것:
 
-- `do_mmap`이 file-backed lazy page들을 SPT에 등록한다.
-- 접근 전에는 실제 frame을 할당하지 않는 lazy 상태를 유지한다.
-- 최초 접근 시 파일에서 올바른 offset의 데이터를 읽는다.
-- 마지막 페이지의 file 밖 영역은 0으로 보인다.
+- `struct file_page` 또는 동등한 file-backed metadata 설계
+- `do_mmap`에서 file-backed lazy page 등록
+- fault 시 backing file에서 올바른 offset의 데이터 로드
+- 마지막 page의 파일 밖 영역 zero fill
+- writable mapping의 dirty page write-back
+- clean page는 write-back하지 않는 정책
+- read-only mapping의 쓰기 방지
+- `do_munmap`에서 mapping 전체 제거
+- `close(fd)`/`remove(file)` 이후에도 mapping이 유지되도록 file reference 관리
+- process exit 시 implicit unmap 효과
 
-목표 테스트:
+페어 B가 자기 로직 검증을 위해 임시로 채워도 되는 것:
+
+- `SYS_MMAP`, `SYS_MUNMAP`이 `do_mmap`, `do_munmap`을 직접 호출하도록 하는 테스트용 syscall 분기
+- fd와 주소 검증을 최소화한 테스트용 syscall wrapper
+- overlap 검사를 단순화한 검증용 코드
+
+페어 B의 우선 목표 테스트:
 
 - `mmap-read`
 - `lazy-file`
 - `swap-file`의 기본 mmap read 검증 부분
 - `mmap-twice`
-
-### 3단계: munmap, dirty write-back, read-only
-
-담당:
-
-- 페어 B 주도, 페어 A syscall/테스트 케이스 리뷰
-
-목표:
-
-- `munmap`이 mapping 전체를 해제한다.
-- writable mapping에서 수정된 page만 파일에 반영된다.
-- clean page는 파일을 덮어쓰지 않는다.
-- read-only mapping은 사용자 쓰기를 허용하지 않는다.
-- `offset > 0` mapping의 write-back 위치가 파일 offset과 일치한다.
-
-목표 테스트:
-
 - `mmap-write`
 - `mmap-clean`
 - `mmap-ro`
 - `mmap-unmap`
 - `mmap-off`
-
-### 4단계: 파일 생명주기와 process cleanup
-
-담당:
-
-- 페어 B 주도, 페어 A fd/syscall 영향 리뷰
-
-목표:
-
-- `close(fd)` 이후에도 mapping은 유효하다.
-- `remove(file)` 이후에도 기존 mapping은 유효하다.
-- process exit 시 explicit `munmap` 없이도 dirty mapping이 write-back된다.
-- exec 이후 이전 주소 공간의 mapping이 새 프로그램에 남지 않는다.
-
-목표 테스트:
-
 - `mmap-close`
 - `mmap-remove`
 - `mmap-exit`
-- `mmap-inherit`
-
-### 5단계: 통합 부하와 회귀
-
-담당:
-
-- 두 페어 공동
-
-목표:
-
-- 여러 페이지, 반복 접근, 다량 write가 포함된 mmap 동작을 확인한다.
-- mmap 구현이 기존 lazy loading, stack growth, syscall user memory 검증을 깨지 않았는지 확인한다.
-
-목표 테스트:
-
 - `mmap-shuffle`
+
+페어 B가 완료했다고 말하려면:
+
+- mapping 직후 file-backed page는 lazy 상태다.
+- 최초 접근 시 파일 내용과 zero tail이 맞다.
+- dirty page만 `munmap` 또는 process exit 때 파일에 반영된다.
+- `munmap` 이후 mapping 주소는 더 이상 유효하지 않다.
+- file close/remove와 mapping lifetime이 분리되어 있다.
+- 임시 syscall 구현 없이 페어 A 실제 구현과 붙였을 때도 같은 VM 동작이 유지된다.
+
+### 통합 때만 공동으로 확인할 것
+
+- `mmap-inherit`
 - 전체 `mmap-*`
 - 관련 회귀: `lazy-file`, `swap-file`, `pt-write-code2`, `page-merge-stk`
+- 페어 A의 실패 조건 검증과 페어 B의 `do_mmap` 방어 로직이 서로 중복되더라도 모순되지 않는지
+- 테스트용 임시 구현이 최종 코드에 섞여 남지 않았는지
 
 ## 테스트 매트릭스
 
@@ -429,16 +416,15 @@ reference에서 명시된 실패 조건은 다음과 같다.
 
 - 페어 A 브랜치: `feat-#<issue>-mmap-syscall-validation`
 - 페어 B 브랜치: `feat-#<issue>-mmap-file-backed`
-- 통합 브랜치: 두 브랜치를 `dev` 또는 mmap 통합 브랜치에 순서대로 병합
+- 통합 브랜치: 두 페어의 실제 구현만 모아 검증하는 브랜치
 
 PR 단위:
 
-- PR 1: syscall 연결과 invalid argument 방어
-- PR 2: file-backed lazy loading과 기본 read
-- PR 3: munmap, dirty write-back, cleanup
-- PR 4: 통합 회귀와 주석 정리
+- PR A: 페어 A의 syscall/검증 파트
+- PR B: 페어 B의 file-backed VM 파트
+- PR 통합: 테스트용 임시 구현 제거, 두 파트 결합, 전체 mmap 회귀 확인
 
-작업 중 PR을 쪼개기 어렵다면 최소한 커밋 단위는 위 경계에 맞춘다.
+각 페어 브랜치에는 자기 파트 검증을 위한 임시 의존성 구현이 들어갈 수 있다. 단, 통합 PR에는 임시 의존성 구현이 남지 않아야 한다.
 
 ## 페어별 리뷰 체크리스트
 
