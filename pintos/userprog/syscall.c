@@ -111,21 +111,18 @@ is_valid_user_ptr(const void *uaddr)
 	// NULL 포인터를 실패 처리한다.
 	if (uaddr == NULL)
 	{
-		user_mem_debug("invalid user ptr: NULL\n");
 		return false;
 	}
 
 	// is_user_vaddr()로 커널 주소를 차단한다.
 	if (!is_user_vaddr((void *)uaddr))
 	{
-		user_mem_debug("invalid user ptr: kernel addr %p\n", uaddr);
 		return false;
 	}
 
 	// 현재 thread의 page table에서 매핑 여부를 확인한다.
 	if (pml4_get_page(thread_current()->pml4, (void *)uaddr) == NULL)
 	{
-		user_mem_debug("invalid user ptr: unmapped %p\n", uaddr);
 		if(!spt_find_page(&thread_current()->spt, pg_round_down(uaddr))) {
 			return false;
 		}
