@@ -197,11 +197,11 @@ vm_stack_growth (void *addr) {
 	 * claim 해주기
 	 * 1 MiB limit 방어
 	*/
-	void *rsp = thread_current()->rsp;
+	void *sb = thread_current()->stack_bottom;
 	
-	void *cur_addr = rsp;
+	void *cur_addr = sb;
 
-	if (USER_STACK - 1048576 > pg_round_down(cur_addr)) {
+	if (USER_STACK - (1 << 20) > pg_round_down(cur_addr)) {
 		return;
 	}
 
@@ -217,7 +217,7 @@ vm_stack_growth (void *addr) {
 			return;
 		}
 	}
-	
+	 /* round_up을 해서 페이지가 있을 때까지 계속 올리기 */
 }
 
 /* Handle the fault on write_protected page */
