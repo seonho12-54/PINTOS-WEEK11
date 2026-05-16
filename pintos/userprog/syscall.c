@@ -194,6 +194,30 @@ validate_user_string(const char *str)
 	}
 }
 
+static bool validate_resident(const void *buffer, unsigned size) {
+	for (const uint8_t *va = pg_round_down(buffer);
+		va <= (const uint8_t *)pg_round_down((const uint8_t *)buffer + size - 1);
+		va += PGSIZE) 
+		{
+			struct page *p = spt_find_page(&thread_current()->spt, va);
+			if (p == NULL) {
+				return false;
+			}
+
+			if (!p->writable) {
+				return false;
+			}
+
+			enum vm_type type = VM_TYPE(p->operations->type);
+			if (type == VM_UNINIT) {
+				if (!vm_claim_page(va)) {
+					return false;
+				}
+			}
+		}
+	return true;
+}
+
 // 기본 헬퍼 함수
 static struct file *find_file_by_fd(int fd)
 {
@@ -239,6 +263,10 @@ static int sys_write(int fd, const void *buffer, unsigned size)
 	}
 	if (fd >= ARG_MAX)
 	{
+		return -1;
+	}
+
+	if (!validate_resident(buffer, size)) {
 		return -1;
 	}
 
@@ -289,6 +317,10 @@ static int sys_read(int fd, void *buffer, unsigned size)
 		return -1;
 	if (fd >= ARG_MAX)
 		return -1;
+
+	if (!validate_resident(buffer, size)) {
+		return -1;
+	}
 
 	if (fd == 0) // 표준입력,  size만큼 반복, 문자 하나를 읽어서 버퍼에 저장후, size반환
 	{
