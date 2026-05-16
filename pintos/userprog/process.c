@@ -575,6 +575,9 @@ __do_fork (void *aux) {
 		goto error;
 	if (!duplicate_running_file(parent, current))
 		goto error;
+	
+	current->stack_bottom = parent->stack_bottom;
+	current->rsp = parent->rsp;
 
 	process_init ();
 	cs->fork_success = true; //복사를 성공하면 부모 프로세스를 꺠웁니다.
