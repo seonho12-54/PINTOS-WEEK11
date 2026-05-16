@@ -22,14 +22,6 @@
 #include "filesys/file.h"  // file_write 함수
 #include "devices/input.h" //sys_read
 
-// 평소에는 꺼두기
-#define USER_MEM_DEBUG 0
-#if USER_MEM_DEBUG
-#define user_mem_debug(...) printf(__VA_ARGS__)
-#else
-#define user_mem_debug(...) ((void)0)
-#endif
-
 void syscall_entry(void);
 void syscall_handler(struct intr_frame *);
 
