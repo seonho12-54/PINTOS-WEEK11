@@ -51,7 +51,7 @@ static bool is_valid_user_ptr(const void *uaddr);
 static void validate_user_ptr(const void *uaddr);
 static void validate_user_buffer(const void *buffer, size_t size);
 static void validate_user_string(const char *str);
-static struct lock filesys_lock;
+struct lock filesys_lock;
 
 /* System call.
  *
