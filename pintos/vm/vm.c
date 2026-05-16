@@ -198,17 +198,16 @@ static void
 vm_stack_growth (void *addr) {
 	void *sb = thread_current()->stack_bottom;
 
-	void *cur_addr = sb;
-
-	while (cur_addr >= addr) {
-		cur_addr -= PGSIZE;
-		if (!vm_alloc_page(VM_ANON | VM_MARKER_0, cur_addr, true)) {
+	while (sb >= addr) {
+		sb -= PGSIZE;
+		if (!vm_alloc_page(VM_ANON | VM_MARKER_0, sb, true)) {
 			return;
 		}
-		if (!vm_claim_page(cur_addr)) {
+		if (!vm_claim_page(sb)) {
 			return;
 		}
 	}
+	thread_current()->stack_bottom = sb;
 }
 
 /* Handle the fault on write_protected page */
