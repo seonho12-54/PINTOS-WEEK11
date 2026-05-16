@@ -256,19 +256,23 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr ,
 	page = spt_find_page(spt, addr);
 	if(page == NULL) {
 		uintptr_t rsp;
-		if(user){
+		if (user) {
 			rsp = f->rsp;
-		} else {
+		} 
+		else {
 			rsp = thread_current()->rsp;
 		}
 
 		if(check_valid_stack_growth(rsp, addr)) {
 			vm_stack_growth(addr);
 			page = spt_find_page(spt, pg_round_down(addr));
-		} else {
+			if (page == NULL) {
+				return false;
+			}
+		} 
+		else {
 			return false;
 		}
-
 	}
 
 	if(write && !page->writable) {
