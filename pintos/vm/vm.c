@@ -4,7 +4,6 @@
 #include "vm/vm.h"
 #include "vm/inspect.h"
 #include "threads/mmu.h"
-#include "hash.h"
 #include "threads/vaddr.h"
 #include "lib/string.h"
 #include "userprog/process.h"
