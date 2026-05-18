@@ -42,7 +42,13 @@ file_backed_initializer (struct page *page, enum vm_type type UNUSED, void *kva 
 /* Swap in the page by read contents from the file. */
 static bool
 file_backed_swap_in (struct page *page, void *kva) {
-	struct file_page *file_page UNUSED = &page->file;
+	struct file_page *file_page = &page->file;
+
+	if(file_page->read_bytes != file_read(file_page->file, kva, file_page->read_bytes)) {
+		return false;
+	} 
+
+	memset((uint8_t *) (page->frame->kva) + file_page->read_bytes, 0, file_page->zero_bytes);
 }
 
 /* Swap out the page by writeback contents to the file. */
