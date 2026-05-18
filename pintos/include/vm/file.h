@@ -13,6 +13,7 @@ struct file_page {
 	uint32_t zero_bytes; 
 	bool writable;
 	void * addr;
+	bool dirty;
 };
 
 void vm_file_init (void);
