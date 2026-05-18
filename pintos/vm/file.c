@@ -43,16 +43,31 @@ file_backed_swap_out (struct page *page) {
 /* Destory the file backed page. PAGE will be freed by the caller. */
 static void
 file_backed_destroy (struct page *page) {
-	struct file_page *file_page UNUSED = &page->file;
+	struct file_page *file_page  = &page->file;
+	pml4_clear_page(current->pml4, page->va);
+	free(file_page);
 }
 
 /* Do the mmap */
 void *
 do_mmap (void *addr, size_t length, int writable,
 		struct file *file, off_t offset) {
+	
 }
 
 /* Do the munmap */
 void
 do_munmap (void *addr) {
+	struct supplemental_page_table *spt = &thread_current()->spt;
+	struct page * page_ = spt_find_page(spt, addr);
+	void * first = page_->file.addr;
+	spt_remove_page(spt,page);
+	first += PGSIZE;
+	struct page * page2 = spt_find_page(spt, first);
+	while(page2->file.addr == page_->file.addr) {
+		spt_remove_page(spt, page2);
+		first += PGSIZE;
+		page2 = spt_find_page(spt, first);
+	}
 }
+

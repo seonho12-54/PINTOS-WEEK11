@@ -546,6 +546,7 @@ sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
 
 static void
 sys_munmap(void *addr) {
+	addr = pg_round_down(addr);
 	bool page_unmapped = spt_find_page(&thread_current()->spt, addr) == NULL;
 	if(page_unmapped) {
 		return;

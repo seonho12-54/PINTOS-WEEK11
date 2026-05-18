@@ -7,6 +7,12 @@ struct page;
 enum vm_type;
 
 struct file_page {
+	struct file *file; // reopen으로 복사본 주소
+	off_t ofs;
+	uint32_t read_bytes;
+	uint32_t zero_bytes; 
+	bool writable;
+	void * addr;
 };
 
 void vm_file_init (void);
