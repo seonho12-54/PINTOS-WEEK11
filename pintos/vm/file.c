@@ -65,11 +65,19 @@ file_backed_swap_out (struct page *page) {
 	 * pml4 에서 매핑 제거
 	*/
 
-	uint64_t pml4 = thread_current()->pml4;
+	uint64_t *pml4 = thread_current()->pml4;
 	struct file_page *file_page = &page->file;
 
+	ASSERT(page != NULL);
+    ASSERT(page->frame != NULL);
+    ASSERT(file_page->file != NULL);
+
 	if (pml4_is_dirty(pml4, page->va)) {
-		if (file_page->read_bytes != file_write_at(file_page->file, page->frame->kva, file_page->read_bytes, file_page->ofs)) {
+		lock_acquire(&filesys_lock);
+		off_t bytes = file_write_at(file_page->file, page->frame->kva, file_page->read_bytes, file_page->ofs);
+		lock_release(&filesys_lock);
+
+		if (file_page->read_bytes != (uint32_t)bytes) {
 			return false;
 		}
 		
@@ -77,16 +85,39 @@ file_backed_swap_out (struct page *page) {
 	}
 
 	pml4_clear_page(pml4, page->va);
-	if (page->frame != NULL) {
-		page->frame = NULL;
-	}
+	page->frame->page = NULL;
+	page->frame = NULL;
 	return true;
 }
 
 /* Destory the file backed page. PAGE will be freed by the caller. */
 static void
 file_backed_destroy (struct page *page) {
-	struct file_page *file_page  = &page->file;
+	/* dirty면 write-back
+	 * pml4 매핑이 남았으면 해제
+	 * backing file 참조 정리
+	 * page metadata 정리
+	*/
+
+	struct file_page *file_page = &page->file;
+	uint64_t *pml4 = thread_current()->pml4;
+
+	if (pml4_is_dirty(pml4, page->va) && page->frame != NULL) {
+		if (!file_backed_swap_out(page)) {
+			file_close(file_page->file);
+			return;
+		}
+		file_close(file_page->file);
+		return;
+	}
+
+	pml4_clear_page(pml4, page->va);
+	if (page->frame != NULL) {
+		page->frame->page = NULL;
+		page->frame = NULL;
+	}
+
+	file_close(file_page->file);
 }
 
 /* Do the mmap */
