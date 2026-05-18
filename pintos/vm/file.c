@@ -60,16 +60,33 @@ file_backed_swap_in (struct page *page, void *kva) {
 /* Swap out the page by writeback contents to the file. */
 static bool
 file_backed_swap_out (struct page *page) {
-	struct file_page *file_page UNUSED = &page->file;
+	/* 수정된 적 있으면
+	 * read_bytes만큼만 다시 쓰기
+	 * pml4 에서 매핑 제거
+	*/
+
+	uint64_t pml4 = thread_current()->pml4;
+	struct file_page *file_page = &page->file;
+
+	if (pml4_is_dirty(pml4, page->va)) {
+		if (file_page->read_bytes != file_write_at(file_page->file, page->frame->kva, file_page->read_bytes, file_page->ofs)) {
+			return false;
+		}
+		
+		pml4_set_dirty(pml4, page->va, false);
+	}
+
+	pml4_clear_page(pml4, page->va);
+	if (page->frame != NULL) {
+		page->frame = NULL;
+	}
+	return true;
 }
 
 /* Destory the file backed page. PAGE will be freed by the caller. */
 static void
 file_backed_destroy (struct page *page) {
 	struct file_page *file_page  = &page->file;
-	file_backed_swap_out (page);
-	pml4_clear_page(thread_current ()->pml4, page->va);
-	file_close (file_page->file);
 }
 
 /* Do the mmap */
