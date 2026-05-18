@@ -6,11 +6,14 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "userprog/process.h"
+#include "userprog/syscall.h"
 
 static bool file_backed_swap_in (struct page *page, void *kva);
 static bool file_backed_swap_out (struct page *page);
 static void file_backed_destroy (struct page *page);
 void delete_resources_by_munmap(struct supplemental_page_table *spt, struct page * page_, void *first);
+static bool file_lazy_load (struct page *page, void *aux);
+
 /* DO NOT MODIFY this struct */
 static const struct page_operations file_ops = {
 	.swap_in = file_backed_swap_in,
@@ -34,7 +37,6 @@ file_backed_initializer (struct page *page, enum vm_type type UNUSED, void *kva 
 
 	struct file_page *file_page = &page->file;
 	*file_page = *aux;
-	free (aux);
 
 	return true;
 }
@@ -44,11 +46,15 @@ static bool
 file_backed_swap_in (struct page *page, void *kva) {
 	struct file_page *file_page = &page->file;
 
-	if(file_page->read_bytes != file_read(file_page->file, kva, file_page->read_bytes)) {
+	lock_acquire(&filesys_lock);
+	if(file_page->read_bytes != file_read_at(file_page->file, kva, file_page->read_bytes, file_page->ofs)) {
+		lock_release(&filesys_lock);
 		return false;
 	} 
+	lock_release(&filesys_lock);
 
-	memset((uint8_t *) (page->frame->kva) + file_page->read_bytes, 0, file_page->zero_bytes);
+	memset((uint8_t *) (kva) + file_page->read_bytes, 0, file_page->zero_bytes);
+	return true;
 }
 
 /* Swap out the page by writeback contents to the file. */
@@ -75,31 +81,48 @@ do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offse
 	//3. 성공시 addr 반환, 실패 시 NULL 반환
 	// read_bytes, zero_bytes가 필요하다.
 	
-	struct file *openfile = file_reopen(file);
 	void *start = addr;
-
-	struct lazy_load_args *aux = malloc(sizeof(struct lazy_load_args));
-
-	aux->ofs = offset;
-	aux->file = openfile;
-	aux->read_bytes = length;
-	aux->zero_bytes = 0;
-	aux->writable = writable;
-
-	while (length > 0) {
-		size_t page_read_bytes = length < PGSIZE ? length : PGSIZE;
+	size_t len = length;
+	off_t file_left = file_length(file) - offset;
+	
+	while (len > 0) {
+		size_t page_total_bytes = len < PGSIZE ? len : PGSIZE;
+		size_t page_read_bytes = page_total_bytes;
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-		aux->ofs = offset;
-		aux->read_bytes = page_read_bytes;
-		aux->zero_bytes = page_zero_bytes;
+		if (file_left <= 0) {
+			page_read_bytes = 0;
+		} 
+		else if (file_left < (off_t)page_read_bytes) {
+			page_read_bytes = file_left;
+		}
 
-		if (!vm_alloc_page_with_initializer(VM_FILE, addr, writable, lazy_load_segment, aux)) {
+		struct file_page *aux = malloc(sizeof(struct file_page));
+		if (aux == NULL) {
 			return NULL;
 		}
 
-		length -= page_read_bytes;
+		aux->ofs = offset;
+		aux->file = file_reopen(file);
+		if (aux->file == NULL) {
+			free(aux);
+			return NULL;
+		}
+
+		aux->read_bytes = page_read_bytes;
+		aux->zero_bytes = page_zero_bytes;
+		aux->writable = writable;
+		aux->addr = start;
+		aux->dirty = false;
+
+		if (!vm_alloc_page_with_initializer(VM_FILE, addr, writable, file_lazy_load, aux)) {
+			free(aux);
+			return NULL;
+		}
+
+		len -= page_total_bytes;
 		offset += page_read_bytes;
+		file_left -= page_read_bytes;
 		addr += PGSIZE;
 	}
 
@@ -120,23 +143,46 @@ do_munmap (void *addr) {
 		return;
 	}
 	void * first = page_->file.addr;
-	void * first_dup = first;
-	page_ = spt_find_page(spt, first);
-	if(page_ == NULL) {
-		return;
-	}
-	delete_resources_by_munmap(spt, page_, first);
-	first += PGSIZE;
-	struct page * page2 = spt_find_page(spt, first);
-	if(page2 == NULL) {
-		return;
-	}
-	while(page2->file.addr != first_dup) {
-		delete_resources_by_munmap(spt, page2, first);
-		first += PGSIZE;
-		page2 = spt_find_page(spt, first);
-		if(page2 == NULL) {
-			return;
+	void * va = first;
+
+	while (true) {
+		struct page *mapped = spt_find_page(spt, va);
+		if (mapped == NULL || mapped->file.addr != first) {
+			break;
 		}
+		spt_remove_page(spt, mapped);
+		va += PGSIZE;
 	}
+}
+
+static bool
+file_lazy_load (struct page *page, void *aux) {
+	/* 첫 page fault 시 파일 내용을 프레임에 채운다. */
+	if(page == NULL || page->frame == NULL) {
+		return false;
+	}
+
+	struct file_page *lazy_load_args_ = (struct file_page*) aux;
+	if(lazy_load_args_ == NULL) {
+		return false;
+	}
+
+	struct file *file_ = lazy_load_args_->file;
+	lock_acquire(&filesys_lock);
+	file_seek(file_, lazy_load_args_->ofs);
+	lock_release(&filesys_lock);
+	void * kva_ = page->frame->kva;
+	off_t read_bytes_ =  lazy_load_args_->read_bytes;
+	off_t zero_bytes_ = lazy_load_args_->zero_bytes;
+	lock_acquire(&filesys_lock);
+	if(read_bytes_ != file_read(file_, kva_, read_bytes_)) {
+		lock_release(&filesys_lock);
+		free(lazy_load_args_);
+		return false;
+	} 
+	lock_release(&filesys_lock);
+	/* 파일에서 읽지 않은 나머지 바이트는 0으로 채운다. */
+	memset((uint8_t *) (page->frame->kva) + read_bytes_, 0, zero_bytes_);
+	free(lazy_load_args_);
+	return true;
 }
