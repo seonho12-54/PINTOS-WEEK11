@@ -520,6 +520,10 @@ sys_halt(void)
 	power_off();
 }
 
+static void
+sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
+	
+}
 /*
  * 시스템콜의 공통 진입점이다.
  * syscall 전환 이후 커널 모드에서 page fault가 나면 intr_frame의 rsp가 사용자 rsp를
@@ -575,6 +579,8 @@ void syscall_handler(struct intr_frame *f UNUSED)
 	case SYS_EXEC:
 		f->R.rax = sys_exec((const char *) f->R.rdi);
 		break;
+	case SYS_MMAP:
+		sys_mmap(f->R.rdi, (size_t) f->R.rsi, (int) f->R.rdx, (int) f->R.r10, (off_t) f->R.r8);
 	default:
 		sys_exit(-1);
 		break;
