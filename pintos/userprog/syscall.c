@@ -546,7 +546,11 @@ sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
 
 static void
 sys_munmap(void *addr) {
-
+	bool page_unmapped = spt_find_page(&thread_current()->spt, addr) == NULL;
+	if(page_unmapped) {
+		return;
+	}
+	do_munmap(addr);
 }
 
 /*
@@ -606,6 +610,9 @@ void syscall_handler(struct intr_frame *f UNUSED)
 		break;
 	case SYS_MMAP:
 		f->R.rax = sys_mmap(f->R.rdi, (size_t) f->R.rsi, (int) f->R.rdx, (int) f->R.r10, (off_t) f->R.r8);
+		break;
+	case SYS_MUNMAP:
+		sys_munmap(f->R.rdi);
 		break;
 	default:
 		sys_exit(-1);
