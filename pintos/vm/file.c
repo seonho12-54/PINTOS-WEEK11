@@ -201,5 +201,8 @@ bool file_lazy_load (struct page *page, void *aux) {
 		return false;
 	}
 
-	file_backed_swap_in(page, page->frame->kva);
+	if (!file_backed_swap_in(page, page->frame->kva)) {
+		return false;
+	}
+	return true;
 }
