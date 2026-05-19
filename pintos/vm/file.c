@@ -12,6 +12,7 @@ static bool file_backed_swap_in (struct page *page, void *kva);
 static bool file_backed_swap_out (struct page *page);
 static void file_backed_destroy (struct page *page);
 void delete_resources_by_munmap(struct supplemental_page_table *spt, struct page * page_, void *first);
+static void * get_mapping_addr (struct page *page_);
 
 /* 이 구조체는 수정하지 않는다. */
 static const struct page_operations file_ops = {
@@ -185,39 +186,19 @@ do_munmap (void *addr) {
 		return;
 	}
 
-	void * first;
-	enum vm_type ty = page_->operations->type;
-
-  if (VM_TYPE(ty) == VM_UNINIT) {
-		first = ((struct file_page *) page_->uninit.aux)->addr;
+	void * first = get_mapping_addr(page_);
+	if (!first) {
+		return;
 	}
-	else if (VM_TYPE(ty) == VM_FILE) {
-		first = page_->file.addr;
-	}
-
 	void * va = first;
 
 	while (true) {
 		struct page *mapped = spt_find_page(spt, va);
-		if (mapped == NULL) {
+		if (mapped == NULL || get_mapping_addr(mapped) != first) {
 			return;
 		}
-		enum vm_type mapped_ty = mapped->operations->type;
-		
-		if (VM_TYPE(mapped_ty) == VM_UNINIT) {
-			if (((struct file_page *)mapped->uninit.aux)->addr != first) {
-				return;
-			}
-			delete_resources_by_munmap(spt, mapped, va);
-			va += PGSIZE;
-		}
-		else if (VM_TYPE(mapped_ty) == VM_FILE) {
-			if (mapped->file.addr != first) {
-				return;
-			}
-			delete_resources_by_munmap(spt, mapped, va);
-			va += PGSIZE;
-		}
+		delete_resources_by_munmap(spt, mapped, va);
+		va += PGSIZE;
 	}
 }
 
@@ -231,4 +212,22 @@ bool file_lazy_load (struct page *page, void *aux) {
 		return false;
 	}
 	return true;
+}
+
+/* page 하나를 받아 해당 페이지의 mapping address를 반환한다. */
+static void * get_mapping_addr (struct page *page_) {
+	if(page_ == NULL) {
+		return NULL;
+	}
+
+	enum vm_type ty = page_->operations->type;
+
+	if (VM_TYPE(ty) == VM_UNINIT && page_get_type(page_) == VM_FILE) {
+		return ((struct file_page *) page_->uninit.aux)->addr;
+	}
+	else if (VM_TYPE(ty) == VM_FILE) {
+		return page_->file.addr;
+	}
+
+	return NULL;
 }
