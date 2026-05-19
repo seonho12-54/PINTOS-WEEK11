@@ -361,28 +361,63 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 			enum vm_type ty = fp->operations->type;
 			enum vm_type target_ty = page_get_type(fp);
 
+			/* 아직 fault가 나지 않은 페이지는 최종 타입에 맞는 aux 형식으로 복제한다. */
 			if (VM_TYPE(ty) == VM_UNINIT) {
-				struct lazy_load_args *aux = malloc(sizeof *aux);
-				if (!aux) {
-					free(aux);
-					return false;
+				/* lazy mmap 페이지는 file-backed metadata와 독립 file 참조를 다시 준비한다. */
+				if (target_ty == VM_FILE) {
+					struct file_page *aux = malloc(sizeof(struct file_page));
+					if (aux ==  NULL) {
+						free(aux);
+						return false;
+					}
+					struct file_page *src = (struct file_page *)fp->uninit.aux;
+					*aux = *src;
+
+					aux->file = file_reopen(src->file);
+					if (aux->file == NULL) {
+						free(aux);
+						return false;
+					}
+
+					if (!vm_alloc_page_with_initializer(target_ty, fp->va, fp->writable, file_lazy_load, aux)) {
+						file_close(aux->file);
+						free(aux);
+						return false;
+					}
 				}
-				*aux = *((struct lazy_load_args *)fp->uninit.aux);
-				if (!vm_alloc_page_with_initializer(target_ty, fp->va, fp->writable, fp->uninit.init, aux)) {
-					free(aux);
-					return false;
+				/* 그 외 lazy 페이지는 기존 lazy-load 인자를 그대로 복제한다. */
+				else {
+					struct lazy_load_args *aux = malloc(sizeof *aux);
+					if (!aux) {
+						free(aux);
+						return false;
+					}
+					*aux = *((struct lazy_load_args *)fp->uninit.aux);
+					if (!vm_alloc_page_with_initializer(target_ty, fp->va, fp->writable, fp->uninit.init, aux)) {
+						free(aux);
+						return false;
+					}
 				}
 			}
 			else {
+				/* 이미 초기화된 file-backed 페이지도 자식 쪽에서 독립 file 참조를 갖도록 복제한다. */
 				if (VM_TYPE(ty) == VM_FILE) {
 					struct file_page *aux = malloc(sizeof(struct file_page));
 					if (aux ==  NULL) {
 						free(aux);
 						return false;
 					}
-					*aux = fp->file;
+					struct file_page src = fp->file;
+					*aux = src;
+
+					aux->file = file_reopen(src.file);
+					if (aux->file == NULL) {
+						free(aux);
+						return false;
+					}
 
 					if (!vm_alloc_page_with_initializer(ty, fp->va, fp->writable, file_lazy_load, aux)) {
+						file_close(aux->file);
 						free(aux);
 						return false;
 					}
