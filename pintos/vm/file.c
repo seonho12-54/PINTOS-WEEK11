@@ -175,23 +175,49 @@ delete_resources_by_munmap(struct supplemental_page_table *spt, struct page * pa
 }
 
 /* 같은 mmap 범위에 속한 page들을 모두 해제한다. */
+
 void
 do_munmap (void *addr) {
 	struct supplemental_page_table *spt = &thread_current()->spt;
 	struct page * page_ = spt_find_page(spt, addr);
+
 	if(page_ == NULL) {
 		return;
 	}
-	void * first = page_->file.addr;
+
+	void * first;
+	enum vm_type ty = page_->operations->type;
+
+  if (VM_TYPE(ty) == VM_UNINIT) {
+		first = ((struct file_page *) page_->uninit.aux)->addr;
+	}
+	else if (VM_TYPE(ty) == VM_FILE) {
+		first = page_->file.addr;
+	}
+
 	void * va = first;
 
 	while (true) {
 		struct page *mapped = spt_find_page(spt, va);
-		if (mapped == NULL || mapped->file.addr != first) {
+		if (mapped == NULL) {
 			return;
 		}
-		delete_resources_by_munmap(spt, mapped, va);
-		va += PGSIZE;
+		enum vm_type mapped_ty = mapped->operations->type;
+		
+		if (VM_TYPE(mapped_ty) == VM_UNINIT) {
+			if (((struct file_page *)mapped->uninit.aux)->addr != first) {
+				return;
+			}
+			delete_resources_by_munmap(spt, mapped, va);
+			va += PGSIZE;
+		}
+		else if (VM_TYPE(mapped_ty) == VM_FILE) {
+			if (mapped->file.addr != first) {
+				return;
+			}
+			delete_resources_by_munmap(spt, mapped, va);
+			va += PGSIZE;
+		}
 	}
 }
 
