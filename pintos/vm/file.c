@@ -12,6 +12,7 @@ static bool file_backed_swap_in (struct page *page, void *kva);
 static bool file_backed_swap_out (struct page *page);
 static void file_backed_destroy (struct page *page);
 void delete_resources_by_munmap(struct supplemental_page_table *spt, struct page * page_, void *first);
+static void * get_mapping_addr (struct page *page_);
 
 /* 이 구조체는 수정하지 않는다. */
 static const struct page_operations file_ops = {
@@ -175,19 +176,25 @@ delete_resources_by_munmap(struct supplemental_page_table *spt, struct page * pa
 }
 
 /* 같은 mmap 범위에 속한 page들을 모두 해제한다. */
+
 void
 do_munmap (void *addr) {
 	struct supplemental_page_table *spt = &thread_current()->spt;
 	struct page * page_ = spt_find_page(spt, addr);
+
 	if(page_ == NULL) {
 		return;
 	}
-	void * first = page_->file.addr;
+
+	void * first = get_mapping_addr(page_);
+	if (!first) {
+		return;
+	}
 	void * va = first;
 
 	while (true) {
 		struct page *mapped = spt_find_page(spt, va);
-		if (mapped == NULL || mapped->file.addr != first) {
+		if (mapped == NULL || get_mapping_addr(mapped) != first) {
 			return;
 		}
 		delete_resources_by_munmap(spt, mapped, va);
@@ -205,4 +212,22 @@ bool file_lazy_load (struct page *page, void *aux) {
 		return false;
 	}
 	return true;
+}
+
+/* page 하나를 받아 해당 페이지의 mapping address를 반환한다. */
+static void * get_mapping_addr (struct page *page_) {
+	if(page_ == NULL) {
+		return NULL;
+	}
+
+	enum vm_type ty = page_->operations->type;
+
+	if (VM_TYPE(ty) == VM_UNINIT && page_get_type(page_) == VM_FILE) {
+		return ((struct file_page *) page_->uninit.aux)->addr;
+	}
+	else if (VM_TYPE(ty) == VM_FILE) {
+		return page_->file.addr;
+	}
+
+	return NULL;
 }
