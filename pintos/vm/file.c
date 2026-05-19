@@ -63,8 +63,8 @@ file_backed_swap_out (struct page *page) {
 	struct file_page *file_page = &page->file;
 
 	ASSERT(page != NULL);
-    ASSERT(page->frame != NULL);
-    ASSERT(file_page->file != NULL);
+  ASSERT(page->frame != NULL);
+  ASSERT(file_page->file != NULL);
 
 	if (pml4_is_dirty(pml4, page->va)) {
 		/* 파일에 대응되는 read_bytes만 되쓴다. */
