@@ -1,4 +1,4 @@
-/* file.c: Implementation of memory backed file object (mmaped object). */
+/* file.c: mmap 파일 기반 page를 처리한다. */
 
 #include "vm/vm.h"
 #include "threads/malloc.h"
@@ -13,7 +13,7 @@ static bool file_backed_swap_out (struct page *page);
 static void file_backed_destroy (struct page *page);
 void delete_resources_by_munmap(struct supplemental_page_table *spt, struct page * page_, void *first);
 
-/* DO NOT MODIFY this struct */
+/* 이 구조체는 수정하지 않는다. */
 static const struct page_operations file_ops = {
 	.swap_in = file_backed_swap_in,
 	.swap_out = file_backed_swap_out,
@@ -21,17 +21,16 @@ static const struct page_operations file_ops = {
 	.type = VM_FILE,
 };
 
-/* The initializer of file vm */
+/* 파일 기반 page 하위 시스템을 초기화한다. */
 void
 vm_file_init (void) {
 }
 
-/* Initialize the file backed page */
+/* uninit page를 파일 기반 page로 초기화한다. */
 bool
 file_backed_initializer (struct page *page, enum vm_type type UNUSED, void *kva UNUSED) {
 	struct file_page *aux = page->uninit.aux;
 
-	/* Set up the handler */
 	page->operations = &file_ops;
 
 	struct file_page *file_page = &page->file;
@@ -40,7 +39,7 @@ file_backed_initializer (struct page *page, enum vm_type type UNUSED, void *kva 
 	return true;
 }
 
-/* Swap in the page by read contents from the file. */
+/* 파일 기반 page의 내용을 파일에서 프레임으로 읽어온다. */
 static bool
 file_backed_swap_in (struct page *page, void *kva) {
 	struct file_page *file_page = &page->file;
@@ -49,21 +48,16 @@ file_backed_swap_in (struct page *page, void *kva) {
 	if(file_page->read_bytes != file_read_at(file_page->file, kva, file_page->read_bytes, file_page->ofs)) {
 		lock_release(&filesys_lock);
 		return false;
-	} 
+	}
 	lock_release(&filesys_lock);
 
 	memset((uint8_t *) (kva) + file_page->read_bytes, 0, file_page->zero_bytes);
 	return true;
 }
 
-/* Swap out the page by writeback contents to the file. */
+/* dirty 파일 기반 page를 매핑된 파일에 되쓴다. */
 static bool
 file_backed_swap_out (struct page *page) {
-	/* 수정된 적 있으면
-	 * read_bytes만큼만 다시 쓰기
-	 * pml4 에서 매핑 제거
-	*/
-
 	uint64_t *pml4 = thread_current()->pml4;
 	struct file_page *file_page = &page->file;
 
@@ -72,6 +66,7 @@ file_backed_swap_out (struct page *page) {
     ASSERT(file_page->file != NULL);
 
 	if (pml4_is_dirty(pml4, page->va)) {
+		/* 파일에 대응되는 read_bytes만 되쓴다. */
 		lock_acquire(&filesys_lock);
 		off_t bytes = file_write_at(file_page->file, page->frame->kva, file_page->read_bytes, file_page->ofs);
 		lock_release(&filesys_lock);
@@ -79,7 +74,7 @@ file_backed_swap_out (struct page *page) {
 		if (file_page->read_bytes != (uint32_t)bytes) {
 			return false;
 		}
-		
+
 		pml4_set_dirty(pml4, page->va, false);
 	}
 
@@ -89,15 +84,9 @@ file_backed_swap_out (struct page *page) {
 	return true;
 }
 
-/* Destory the file backed page. PAGE will be freed by the caller. */
+/* 파일 기반 page를 정리하고 재오픈한 파일을 닫는다. */
 static void
 file_backed_destroy (struct page *page) {
-	/* dirty면 write-back
-	 * pml4 매핑이 남았으면 해제
-	 * backing file 참조 정리
-	 * page metadata 정리
-	*/
-
 	struct file_page *file_page = &page->file;
 	uint64_t *pml4 = thread_current()->pml4;
 
@@ -119,19 +108,13 @@ file_backed_destroy (struct page *page) {
 	file_close(file_page->file);
 }
 
-/* Do the mmap */
+/* mmap 범위의 파일 기반 page들을 지연 로딩 page로 등록한다. */
 void *
 do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offset) {
-	//0. file은 reopen해서 복사
-	//1. offset 위치에서 length만큼 바이트를 addr에 매핑
-	//2. spt에 파일정보를 등록
-	//3. 성공시 addr 반환, 실패 시 NULL 반환
-	// read_bytes, zero_bytes가 필요하다.
-	
 	void *start = addr;
 	size_t len = length;
 	off_t file_left = file_length(file) - offset;
-	
+
 	while (len > 0) {
 		size_t page_total_bytes = len < PGSIZE ? len : PGSIZE;
 		size_t page_read_bytes = page_total_bytes;
@@ -139,11 +122,12 @@ do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offse
 
 		if (file_left <= 0) {
 			page_read_bytes = 0;
-		} 
+		}
 		else if (file_left < (off_t)page_read_bytes) {
 			page_read_bytes = file_left;
 		}
 
+		/* 각 page는 독립 file 참조와 offset 정보를 가진다. */
 		struct file_page *aux = malloc(sizeof(struct file_page));
 		if (aux == NULL) {
 			return NULL;
@@ -176,16 +160,19 @@ do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offse
 	return start;
 
 }
+
+/* mmap page 하나를 SPT와 pml4에서 제거한다. */
 void
 delete_resources_by_munmap(struct supplemental_page_table *spt, struct page * page_, void *first) {
 	spt_remove_page(spt,page_);
 	pml4_clear_page(thread_current()->pml4, first);
 }
-/* Do the munmap */
+
+/* 같은 mmap 범위에 속한 page들을 모두 해제한다. */
 void
 do_munmap (void *addr) {
 	struct supplemental_page_table *spt = &thread_current()->spt;
-	struct page * page_ = spt_find_page(spt, addr); 
+	struct page * page_ = spt_find_page(spt, addr);
 	if(page_ == NULL) {
 		return;
 	}
@@ -202,8 +189,8 @@ do_munmap (void *addr) {
 	}
 }
 
+/* 지연 로딩 파일 기반 page의 첫 page fault를 처리한다. */
 bool file_lazy_load (struct page *page, void *aux) {
-	/* 첫 page fault 시 파일 내용을 프레임에 채운다. */
 	if(page == NULL || page->frame == NULL) {
 		return false;
 	}

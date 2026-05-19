@@ -348,7 +348,7 @@ supplemental_page_table_init (struct supplemental_page_table *spt) {
 	hash_init(pages, page_hash, page_less, NULL);
 }
 
-/* Copy supplemental page table from src to dst */
+/* src SPT의 page entry를 dst SPT로 복사한다. */
 bool
 supplemental_page_table_copy (struct supplemental_page_table *dst,
 		struct supplemental_page_table *src) {
@@ -357,12 +357,10 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 		hash_first(&i, &src->pages);
 		while (hash_next(&i))
 		{	
-			/* 부모 프로세스 정보만 가져와서 uninit으로 다 새로 만들어줘야함.*/
 			struct page *fp = hash_entry(hash_cur(&i), struct page, hash_elem);
-			enum vm_type ty = fp->operations->type; // 이게 현재 페이지의 타입
-			enum vm_type target_ty = page_get_type(fp); // UNINIT일 경우 이건 타겟 타입
-			
-			/* 부모의 SPT에 있는 UNINIT ANON FILE 페이지들을 전부 복사 */
+			enum vm_type ty = fp->operations->type;
+			enum vm_type target_ty = page_get_type(fp);
+
 			if (VM_TYPE(ty) == VM_UNINIT) {
 				struct lazy_load_args *aux = malloc(sizeof *aux);
 				if (!aux) {
@@ -394,13 +392,11 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 						return false;
 					}
 				}
-				/* ANON or FILE 이지만 eviction으로 인해 frame에 없을 경우 이후 swap 구현 시 로직 추가 필요 */
-				
 				if(fp->frame != NULL) {
-					/* UNINIT이 아니고 frame이 mapping 되었다면 즉시 claim */
+					/* 이미 claim된 page는 프레임 내용까지 복사한다. */
 					vm_claim_page(fp->va);
 					struct page *p = spt_find_page(dst, fp->va);
-					memcpy(p->frame->kva, fp->frame->kva, PGSIZE); //
+					memcpy(p->frame->kva, fp->frame->kva, PGSIZE);
 				}
 			}
 
@@ -408,29 +404,27 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 		return true;
 }
 
-/* Free the resource hold by the supplemental page table */
+/* SPT가 가진 모든 page 자원을 해제한다. */
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt) {
-	/* TODO: Destroy all the supplemental_page_table hold by thread and
-	 * TODO: writeback all the modified contents to the storage. */
 	if (spt == NULL) {
 		return;
 	}
 
-	hash_destroy(&spt->pages, hash_destructor); /* DESTRUCTOR may, if appropriate, deallocate the memory used by the hash element.*/
+	hash_destroy(&spt->pages, hash_destructor);
 
 	spt->pages.hash = NULL;
 	spt->pages.less = NULL;
 }
 
-/* 해시값의 가상 주소를 해시값으로 바꿔서 SPT 해시 테이블에서 찾기 쉽게 만듦 */
+/* page의 가상 주소를 기준으로 해시값을 만든다. */
 static uint64_t page_hash(const struct hash_elem *e, void *aux UNUSED) {
 	const struct page *page = hash_entry(e, struct page, hash_elem);
 
 	return hash_bytes(&page->va, sizeof page->va);
 }
 
-/* va 크기 순서로 비교해서 같은 해시 테이블 안에서 정렬 */
+/* SPT 해시 테이블에서 가상 주소 순서로 page를 비교한다. */
 static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED) {
 	const struct page *pa = hash_entry(a, struct page, hash_elem);
 	const struct page *pb = hash_entry(b, struct page, hash_elem);
@@ -438,13 +432,8 @@ static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void
 	return pa->va < pb->va;
 }
 
-/* destructor 구현 필요*/
-
-/* Performs some operation on hash element E, given auxiliary
- * data AUX. */
+/* SPT 해시 엔트리 하나를 page 해제 경로로 보낸다. */
 static void *hash_destructor (struct hash_elem *e, void *aux) {
-	// 1. hash_elem page_entry로 page SPT에서 지우기 -> 이거는 hash_clear 에서 list_pop_front로 bucket에서 제거되므로, 괜찮을듯?
-	// 2. page free or dealloc
 	if (e == NULL) {
 		return;
 	}
