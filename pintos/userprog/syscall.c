@@ -532,9 +532,16 @@ sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
 	bool page_mapped = spt_find_page(&thread_current()->spt, addr) != NULL;
 	bool misaligned_offset = offset % PGSIZE != 0; VM_MARKER_1;
 
-	if(address_null || misaligned_addr || is_kernel_addr || length_zero || is_over_kern_base || page_mapped || misaligned_offset) {
-		return MAP_FAILED;
-	}
+	if(address_null || misaligned_addr || is_kernel_addr || length_zero || is_over_kern_base || misaligned_offset) {
+ 		return MAP_FAILED;
+ 	}
+
+	for (char *page = (char *) addr; page < (char *) addr + length; page += PGSIZE) {
+ 		if (spt_find_page(&thread_current()->spt, page) != NULL) {
+ 			return MAP_FAILED;
+ 		}
+ 	}
+
 
 	struct file *file_addr = find_file_by_fd(fd);
 	if (!file_addr) {
