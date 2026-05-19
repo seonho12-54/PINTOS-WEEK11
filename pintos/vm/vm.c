@@ -153,10 +153,16 @@ vm_get_victim (void) {
  * Return NULL on error.*/
 static struct frame *
 vm_evict_frame (void) {
-	struct frame *victim UNUSED = vm_get_victim ();
+	struct frame *victim  = vm_get_victim ();
+	if (!victim) {
+		return NULL;
+	}
 	/* TODO: swap out the victim and return the evicted frame. */
 
-	return NULL;
+	if(!swap_out(victim->page)) {
+		return NULL;
+	}
+	return victim;
 }
 
 /* 사용자 풀에서 프레임을 확보한다.
@@ -176,12 +182,16 @@ vm_get_frame (void) {
   frame_->kva = palloc_get_page(PAL_USER);
 
   if (frame_->kva == NULL) {
-		if (!vm_evict_frame) {
-			PANIC ("eviction failure");
+		struct frame * evicted_frame = vm_evict_frame();
+		if (!evicted_frame) {
+			free(frame_);
+			PANIC ("eviction fail");
 		}
-		/* eviction 성공했으면 재시도 */
-		frame_->kva = palloc_get_page(PAL_USER);
+		free(frame_);
+		return evicted_frame;
   }
+
+	/* palloc_get_page(PAL_USER)가 성공했으면 frame_을 frame table에 등록 필요(아직 구현 안함)*/
 
   ASSERT (frame_ != NULL);
   ASSERT (frame_->page == NULL);
