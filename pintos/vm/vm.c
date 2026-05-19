@@ -7,7 +7,6 @@
 #include "threads/vaddr.h"
 #include "lib/string.h"
 #include "userprog/process.h"
-#include <stdio.h>
 
 static uint64_t page_hash (const struct hash_elem *e, void *aux);
 static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux);
