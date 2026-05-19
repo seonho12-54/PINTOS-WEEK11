@@ -95,7 +95,7 @@ file_backed_destroy (struct page *page) {
 			pml4_clear_page(pml4, page->va);
  			page->frame->page = NULL;
  			page->frame = NULL;
-			
+
 			file_close(file_page->file);
 			return;
 		}
@@ -151,6 +151,7 @@ do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offse
 		aux->dirty = false;
 
 		if (!vm_alloc_page_with_initializer(VM_FILE, addr, writable, file_lazy_load, aux)) {
+			file_close(aux->file);
 			free(aux);
 			return NULL;
 		}
