@@ -176,10 +176,11 @@ vm_get_frame (void) {
   frame_->kva = palloc_get_page(PAL_USER);
 
   if (frame_->kva == NULL) {
-    free(frame_);
-    PANIC ("todo: eviction");
-	/* TODO: frame table과 eviction 정책은 이후 단계에서 연결한다. */
-    /* 사용자 풀 페이지가 없으면 이후 eviction 경로로 이어진다. */
+		if (!vm_evict_frame) {
+			PANIC ("eviction failure");
+		}
+		/* eviction 성공했으면 재시도 */
+		frame_->kva = palloc_get_page(PAL_USER);
   }
 
   ASSERT (frame_ != NULL);
