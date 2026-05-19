@@ -186,7 +186,7 @@ delete_resources_by_munmap(struct supplemental_page_table *spt, struct page * pa
 void
 do_munmap (void *addr) {
 	struct supplemental_page_table *spt = &thread_current()->spt;
-	struct page * page_ = spt_find_page(spt, addr);
+	struct page * page_ = spt_find_page(spt, addr); 
 	if(page_ == NULL) {
 		return;
 	}
@@ -196,9 +196,9 @@ do_munmap (void *addr) {
 	while (true) {
 		struct page *mapped = spt_find_page(spt, va);
 		if (mapped == NULL || mapped->file.addr != first) {
-			break;
+			return;
 		}
-		spt_remove_page(spt, mapped);
+		delete_resources_by_munmap(spt, mapped, va);
 		va += PGSIZE;
 	}
 }
