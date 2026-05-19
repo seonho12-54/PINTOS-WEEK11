@@ -12,7 +12,6 @@ static bool file_backed_swap_in (struct page *page, void *kva);
 static bool file_backed_swap_out (struct page *page);
 static void file_backed_destroy (struct page *page);
 void delete_resources_by_munmap(struct supplemental_page_table *spt, struct page * page_, void *first);
-static bool file_lazy_load (struct page *page, void *aux);
 
 /* DO NOT MODIFY this struct */
 static const struct page_operations file_ops = {
@@ -198,39 +197,16 @@ do_munmap (void *addr) {
 		if (mapped == NULL || mapped->file.addr != first) {
 			break;
 		}
-		spt_remove_page(spt, mapped);
+		delete_resources_by_munmap(spt, mapped, va);
 		va += PGSIZE;
 	}
 }
 
-static bool
-file_lazy_load (struct page *page, void *aux) {
+bool file_lazy_load (struct page *page, void *aux) {
 	/* 첫 page fault 시 파일 내용을 프레임에 채운다. */
 	if(page == NULL || page->frame == NULL) {
 		return false;
 	}
 
-	struct file_page *lazy_load_args_ = (struct file_page*) aux;
-	if(lazy_load_args_ == NULL) {
-		return false;
-	}
-
-	struct file *file_ = lazy_load_args_->file;
-	lock_acquire(&filesys_lock);
-	file_seek(file_, lazy_load_args_->ofs);
-	lock_release(&filesys_lock);
-	void * kva_ = page->frame->kva;
-	off_t read_bytes_ =  lazy_load_args_->read_bytes;
-	off_t zero_bytes_ = lazy_load_args_->zero_bytes;
-	lock_acquire(&filesys_lock);
-	if(read_bytes_ != file_read(file_, kva_, read_bytes_)) {
-		lock_release(&filesys_lock);
-		free(lazy_load_args_);
-		return false;
-	} 
-	lock_release(&filesys_lock);
-	/* 파일에서 읽지 않은 나머지 바이트는 0으로 채운다. */
-	memset((uint8_t *) (page->frame->kva) + read_bytes_, 0, zero_bytes_);
-	free(lazy_load_args_);
-	return true;
+	file_backed_swap_in(page, page->frame->kva);
 }

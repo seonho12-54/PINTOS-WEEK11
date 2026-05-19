@@ -7,6 +7,7 @@
 #include "threads/vaddr.h"
 #include "lib/string.h"
 #include "userprog/process.h"
+#include <stdio.h>
 
 static uint64_t page_hash (const struct hash_elem *e, void *aux);
 static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void *aux);
@@ -363,7 +364,6 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 			enum vm_type target_ty = page_get_type(fp); // UNINIT일 경우 이건 타겟 타입
 			
 			/* 부모의 SPT에 있는 UNINIT ANON FILE 페이지들을 전부 복사 */
-			
 			if (VM_TYPE(ty) == VM_UNINIT) {
 				struct lazy_load_args *aux = malloc(sizeof *aux);
 				if (!aux) {
@@ -377,10 +377,24 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 				}
 			}
 			else {
-				if (!vm_alloc_page(ty, fp->va, fp->writable)) {
-					return false;
-				}
+				if (VM_TYPE(ty) == VM_FILE) {
+					struct file_page *aux = malloc(sizeof(struct file_page));
+					if (aux ==  NULL) {
+						free(aux);
+						return false;
+					}
+					*aux = fp->file;
 
+					if (!vm_alloc_page_with_initializer(ty, fp->va, fp->writable, file_lazy_load, aux)) {
+						free(aux);
+						return false;
+					}
+				}
+				else if (VM_TYPE(ty) == VM_ANON) {
+					if (!vm_alloc_page(ty, fp->va, fp->writable)) {
+						return false;
+					}
+				}
 				/* ANON or FILE 이지만 eviction으로 인해 frame에 없을 경우 이후 swap 구현 시 로직 추가 필요 */
 				
 				if(fp->frame != NULL) {
