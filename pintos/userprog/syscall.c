@@ -530,7 +530,7 @@ sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
 	bool length_zero = length <= 0;
 	bool is_over_kern_base = is_kernel_vaddr((addr + length)) || (addr >= addr + length);
 	bool page_mapped = spt_find_page(&thread_current()->spt, addr) != NULL;
-	bool misaligned_offset = offset % PGSIZE != 0; VM_MARKER_1;
+	bool misaligned_offset = offset % PGSIZE != 0;
 
 	if(address_null || misaligned_addr || is_kernel_addr || length_zero || is_over_kern_base || misaligned_offset) {
  		return MAP_FAILED;
