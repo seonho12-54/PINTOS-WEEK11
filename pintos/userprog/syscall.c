@@ -540,7 +540,7 @@ sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
 	if (!file_addr) {
 		return MAP_FAILED;
 	}
-	/* 위에서 검증 다 하고 밑에는 다 통과된 놈들만 넘긴다고 가정 */
+	/* do_mmap에는 검증 완료된 addr, length, offset만 인자로 전달 */
 	return do_mmap(addr, length, writable, file_addr, offset);
 }
 
