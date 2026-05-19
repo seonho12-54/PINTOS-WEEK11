@@ -92,6 +92,10 @@ file_backed_destroy (struct page *page) {
 
 	if (pml4_is_dirty(pml4, page->va) && page->frame != NULL) {
 		if (!file_backed_swap_out(page)) {
+			pml4_clear_page(pml4, page->va);
+ 			page->frame->page = NULL;
+ 			page->frame = NULL;
+			
 			file_close(file_page->file);
 			return;
 		}
