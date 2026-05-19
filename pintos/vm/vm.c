@@ -361,7 +361,9 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 			enum vm_type ty = fp->operations->type;
 			enum vm_type target_ty = page_get_type(fp);
 
+			/* 아직 fault가 나지 않은 페이지는 최종 타입에 맞는 aux 형식으로 복제한다. */
 			if (VM_TYPE(ty) == VM_UNINIT) {
+				/* lazy mmap 페이지는 file-backed metadata와 독립 file 참조를 다시 준비한다. */
 				if (target_ty == VM_FILE) {
 					struct file_page *aux = malloc(sizeof(struct file_page));
 					if (aux ==  NULL) {
@@ -383,6 +385,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 						return false;
 					}
 				}
+				/* 그 외 lazy 페이지는 기존 lazy-load 인자를 그대로 복제한다. */
 				else {
 					struct lazy_load_args *aux = malloc(sizeof *aux);
 					if (!aux) {
@@ -397,6 +400,7 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 				}
 			}
 			else {
+				/* 이미 초기화된 file-backed 페이지도 자식 쪽에서 독립 file 참조를 갖도록 복제한다. */
 				if (VM_TYPE(ty) == VM_FILE) {
 					struct file_page *aux = malloc(sizeof(struct file_page));
 					if (aux ==  NULL) {
