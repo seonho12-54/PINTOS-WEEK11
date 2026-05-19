@@ -122,7 +122,6 @@ do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offse
 	while (len > 0) {
 		size_t page_total_bytes = len < PGSIZE ? len : PGSIZE;
 		size_t page_read_bytes = page_total_bytes;
-		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		if (file_left <= 0) {
 			page_read_bytes = 0;
@@ -130,6 +129,8 @@ do_mmap (void *addr, size_t length, int writable, struct file *file, off_t offse
 		else if (file_left < (off_t)page_read_bytes) {
 			page_read_bytes = file_left;
 		}
+		
+		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* 각 page는 독립 file 참조와 offset 정보를 가진다. */
 		struct file_page *aux = malloc(sizeof(struct file_page));
