@@ -21,6 +21,7 @@
 #include "threads/init.h"  // power_off 함수
 #include "filesys/file.h"  // file_write 함수
 #include "devices/input.h" //sys_read
+#include "user/syscall.h"
 
 void syscall_entry(void);
 void syscall_handler(struct intr_frame *);
@@ -520,6 +521,38 @@ sys_halt(void)
 	power_off();
 }
 
+static void *
+sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
+
+	bool address_null = addr == NULL;
+	bool misaligned_addr = pg_round_down(addr) != addr;
+	bool is_kernel_addr = is_kernel_vaddr(addr);
+	bool length_zero = length <= 0;
+	bool is_over_kern_base = is_kernel_vaddr((addr + length)) || (addr >= addr + length);
+	bool page_mapped = spt_find_page(&thread_current()->spt, addr) != NULL;
+	bool misaligned_offset = offset % PGSIZE != 0; VM_MARKER_1;
+
+	if(address_null || misaligned_addr || is_kernel_addr || length_zero || is_over_kern_base || page_mapped || misaligned_offset) {
+		return MAP_FAILED;
+	}
+
+	struct file *file_addr = find_file_by_fd(fd);
+	if (!file_addr) {
+		return MAP_FAILED;
+	}
+	/* 위에서 검증 다 하고 밑에는 다 통과된 놈들만 넘긴다고 가정 */
+	return do_mmap(addr, length, writable, file_addr, offset);
+}
+
+static void
+sys_munmap(void *addr) {
+	bool page_unmapped = spt_find_page(&thread_current()->spt, addr) == NULL;
+	if(page_unmapped) {
+		return;
+	}
+	do_munmap(addr);
+}
+
 /*
  * 시스템콜의 공통 진입점이다.
  * syscall 전환 이후 커널 모드에서 page fault가 나면 intr_frame의 rsp가 사용자 rsp를
@@ -574,6 +607,12 @@ void syscall_handler(struct intr_frame *f UNUSED)
 		break;
 	case SYS_EXEC:
 		f->R.rax = sys_exec((const char *) f->R.rdi);
+		break;
+	case SYS_MMAP:
+		f->R.rax = sys_mmap(f->R.rdi, (size_t) f->R.rsi, (int) f->R.rdx, (int) f->R.r10, (off_t) f->R.r8);
+		break;
+	case SYS_MUNMAP:
+		sys_munmap(f->R.rdi);
 		break;
 	default:
 		sys_exit(-1);

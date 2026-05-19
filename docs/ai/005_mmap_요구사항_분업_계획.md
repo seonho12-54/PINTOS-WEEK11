@@ -220,26 +220,98 @@ reference에서 명시된 실패 조건은 다음과 같다.
 
 ## 페어 간 합의가 필요한 공유 설계
 
-아래 항목은 어느 한 페어가 독단적으로 정하면 충돌이 나기 쉽다. 첫 작업 시작 전에 30분 정도 함께 합의하고 문서화한 뒤 구현에 들어간다.
+이 섹션은 페어 A syscall 쪽과 페어 B VM 쪽이 서로 같은 전제를 갖고 있어야 하는 부분 목록이다. 각자 구현은 따로 해도 되지만, 아래 항목은 이름, 의미, 책임 경계가 맞지 않으면 나중에 붙일 때 깨질 수 있다.
 
-- file-backed page가 보관해야 할 최소 상태
-  - backing file reference
-  - file offset
-  - page 안에서 읽을 byte 수
-  - page 안에서 0으로 채울 byte 수
-  - writable 여부
-  - mapping의 시작 주소 또는 munmap 범위 추적 방법
-- mmap range를 어디까지 하나의 mapping으로 추적할지
-  - page별 SPT entry만으로 충분한지
-  - 별도 mapping descriptor가 필요한지
-- `munmap(addr)`이 여러 페이지를 해제할 때 범위를 찾는 기준
-- dirty bit 확인 기준
-  - MMU dirty bit와 page metadata 중 어떤 정보를 신뢰할지
-- `close(fd)`와 mapping 생명주기 분리 방법
-- `process_exit()`에서 explicit `munmap`과 같은 효과를 내는 경로
-- `supplemental_page_table_copy()`에서 file-backed page를 어떻게 다룰지
-  - reference의 SPT copy 요구사항과 `mmap-inherit` 테스트 관찰을 함께 놓고 결정한다.
-  - `mmap-inherit` 테스트는 child가 `exec`한 뒤 parent의 mapping 주소에 접근할 수 없음을 확인한다.
+근거는 `docs/reference/pintos-kaist-original/3_project3/4_memory_mapped_files.md`의 `mmap`, `munmap`, file-backed page 요구사항이다.
+
+### 1. file-backed page가 보관해야 할 최소 상태
+
+mmap으로 만든 page는 anonymous page가 아니라 파일을 backing store로 가진 page다. 그래서 page마다 최소한 이런 정보를 알아야 한다.
+
+- `backing file reference`: 이 page가 어떤 파일을 보고 있는지
+- `file offset`: 파일의 몇 번째 byte부터 읽어야 하는지
+- `read_bytes`: 이 page에서 파일에서 실제로 읽을 byte 수
+- `zero_bytes`: 파일 끝을 넘어선 나머지를 0으로 채울 byte 수
+- `writable`: 이 mapping이 쓰기 가능한지
+- mapping 시작 주소/범위 정보: 나중에 `munmap(addr)` 했을 때 어디부터 어디까지 해제해야 하는지
+
+즉 page fault가 났을 때 이 page를 파일 어디에서 어떻게 채울지와, 해제할 때 파일 어디에 다시 써야 하는지를 기억해야 한다는 말이다.
+
+### 2. mmap range 추적 방식
+
+`mmap(addr, length, ...)`는 보통 여러 page를 한 번에 만든다. 예를 들어 12KB를 mmap하면 3개 page가 생긴다.
+
+여기서 선택지가 있다.
+
+- page마다 metadata를 넣고, `munmap` 때 page들을 따라가며 찾기
+- 별도 mapping descriptor를 만들어서 이 mmap은 시작 주소 A, 길이 L이라는 식으로 관리하기
+
+둘 다 가능하지만, 페어 A와 페어 B가 다르게 가정하면 문제가 생긴다. 예를 들어 페어 A는 `munmap(addr)`이 시작 주소만 받는다고 생각하는데, 페어 B는 page별 정보만 보고 범위를 못 찾으면 통합 때 막힌다.
+
+### 3. `munmap(addr)`이 여러 페이지를 해제할 때 범위를 찾는 기준
+
+reference에 따르면 `munmap(addr)`의 `addr`은 이전 `mmap`이 반환한 주소여야 한다. 그런데 실제로 해제해야 하는 건 그 주소 한 page가 아니라, 그 `mmap` 호출로 만들어진 전체 mapping 범위다.
+
+그래서 결정해야 하는 질문은 이거다.
+
+- `addr`이 mapping 시작 주소인지 어떻게 확인할 것인가?
+- 그 mapping이 몇 page인지 어디서 알 것인가?
+- 중간 page 주소로 `munmap`이 들어오면 어떻게 볼 것인가?
+
+이건 syscall 쪽 검증과 VM 쪽 해제가 맞물리는 지점이라 합의가 필요하다.
+
+### 4. dirty bit 확인 기준
+
+reference는 프로세스가 write한 page만 파일에 write-back하고, write하지 않은 page는 write-back하면 안 된다고 한다.
+
+그러려면 어떤 page가 수정됐는지 알아야 한다. 보통 후보는 두 가지다.
+
+- MMU dirty bit: 하드웨어/page table이 이 page에 write가 있었다고 표시한 값
+- page metadata: page 구조체 안에 별도 상태를 기록하는 방식
+
+둘 중 무엇을 기준으로 삼을지 정해야 한다. 안 그러면 한쪽은 dirty bit만 보면 된다고 구현하고, 다른 쪽은 metadata가 true일 때만 write-back한다고 생각해서 write-back 조건이 어긋날 수 있다.
+
+### 5. `close(fd)`와 mapping 생명주기 분리
+
+reference가 명확히 말하는 부분이다. 파일을 `close(fd)`해도 이미 만든 mmap은 계속 살아 있어야 한다. 파일을 `remove`해도 마찬가지로 기존 mapping은 유지되어야 한다.
+
+그래서 mmap은 원래 fd table의 `struct file *`에만 기대면 안 되고, mapping마다 독립적인 file reference를 가져야 한다. reference에서도 `file_reopen`을 쓰라고 한다.
+
+쉽게 말하면 다음과 같다.
+
+- fd는 닫혀도 된다.
+- mmap은 여전히 파일 내용을 읽고 쓸 수 있어야 한다.
+- 그러려면 mapping 쪽이 자기 file 참조를 따로 들고 있어야 한다.
+
+### 6. `process_exit()`에서 explicit `munmap`과 같은 효과를 내는 경로
+
+프로세스가 `munmap()`을 직접 호출하지 않고 종료해도, 모든 mapping은 자동으로 해제되어야 한다. 이때 dirty page는 파일에 write-back되어야 한다.
+
+즉 `process_exit()` 흐름에서 SPT를 정리할 때 file-backed page destroy 경로가 사실상 `munmap`과 같은 일을 해야 한다는 뜻이다.
+
+확인해야 할 질문은 다음과 같다.
+
+- 프로세스 종료 시 모든 mmap page가 SPT 정리 과정에서 방문되는가?
+- dirty page write-back이 이 경로에서도 실행되는가?
+- file reference가 닫히는가?
+
+### 7. `supplemental_page_table_copy()`에서 file-backed page를 어떻게 다룰지
+
+reference의 SPT copy 설명은 fork 때 부모의 SPT를 자식에게 복사해야 한다고 말한다. 그런데 mmap 쪽 테스트 중 `mmap-inherit`는 child가 `exec`한 뒤 부모의 mmap 주소를 건드리면 죽어야 한다는 걸 확인한다.
+
+여기서 헷갈리면 안 되는 점은 다음과 같다.
+
+- fork 직후 SPT copy 정책은 reference의 VM 요구사항과 연결된다.
+- exec 이후에는 새 주소 공간으로 바뀌므로 부모의 mapping이 남으면 안 된다.
+- `mmap-inherit` 하나만 보고 mmap은 fork에서 절대 복사 안 해도 된다고 단정하면 위험하다.
+
+그래서 이 부분은 페어 B가 SPT copy/kill 쪽을 볼 때, 페어 A와 테스트 기대를 같이 확인해야 하는 영역이다.
+
+요약하면, 이 섹션은 구현 순서라기보다 두 페어가 같은 약속을 해야 하는 인터페이스다. 특히 중요한 약속은 세 개다.
+
+- `do_mmap`에 들어오는 인자는 어디까지 검증된 상태인가?
+- `munmap(addr)`에서 전체 mapping 범위를 어떻게 찾는가?
+- dirty write-back과 file reference 정리는 어느 경로에서 보장되는가?
 
 ## 페어별 작업 제한선
 
@@ -279,7 +351,7 @@ reference에서 명시된 실패 조건은 다음과 같다.
 - `do_mmap`이 검증을 어디까지 신뢰하고 어디부터 자체 방어할지
 - `munmap(addr)`이 mapping 전체 범위를 찾는 방식
 - mapping descriptor를 별도로 둘지, page별 metadata로 충분한지
-- `supplemental_page_table_copy()`에서 file-backed page를 복사할지, exec 이후 정리만 신뢰할지
+- fork 직후 file-backed page를 `supplemental_page_table_copy()`에서 어떻게 다룰지와 exec 이후 기존 mapping이 정리되는 경로를 어떻게 확인할지
 - dirty 여부를 MMU dirty bit만으로 볼지, 추가 page state와 함께 볼지
 
 ## 페어별 독립 작업 범위와 검증 루트
@@ -448,7 +520,7 @@ PR 단위:
 
 - `mmap-bad-off`의 offset alignment 요구는 테스트 기반 요구사항이다. reference의 mmap 문단에는 offset alignment 실패 조건이 직접 문장으로 보이지 않는다.
 - `mmap-zero`는 빈 파일과 length 0 호출을 다루며, reference는 0바이트 파일 mmap이 실패할 수 있다고 한다. `mmap-zero-len`은 length 0 실패를 명확히 기대한다.
-- `mmap-inherit`는 child가 `exec`한 뒤 parent의 mapping 주소를 사용할 수 없음을 확인한다. 이 테스트 하나만으로 fork 직후 file-backed mapping copy 정책 전체를 단정하지 말고, SPT copy reference와 함께 판단해야 한다.
+- `mmap-inherit`는 child가 `exec`한 뒤 parent의 mapping 주소를 사용할 수 없음을 확인한다. 현재 코드에서 `__do_fork()`가 SPT copy를 호출하더라도 mmap/file-backed page 구현은 별도 대상이므로, 이 테스트 하나만 보고 fork copy 정책이 이미 끝났다고 판단하지 않는다.
 - 둘 이상의 프로세스가 같은 파일을 mapping할 때 데이터 일관성은 요구되지 않는다. 공유 물리 페이지 구현을 목표로 잡지 않는다.
 - swapping 관련 테스트까지 확장할 때는 `file_backed_swap_out`과 `file_backed_swap_in`의 역할이 `munmap` write-back과 겹치지 않도록 용어를 분리해서 리뷰한다.
 
