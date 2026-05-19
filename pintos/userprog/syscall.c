@@ -548,7 +548,11 @@ sys_mmap(void *addr, size_t length, int writable, int fd, off_t offset) {
 		return MAP_FAILED;
 	}
 	/* do_mmap에는 검증 완료된 addr, length, offset만 인자로 전달 */
-	return do_mmap(addr, length, writable, file_addr, offset);
+	void *mapped_addr = do_mmap(addr, length, writable, file_addr, offset);
+ 	if (mapped_addr == NULL) {
+ 		return MAP_FAILED;
+ 	}
+ 	return mapped_addr;
 }
 
 static void
