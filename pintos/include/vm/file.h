@@ -7,8 +7,8 @@ struct page;
 enum vm_type;
 
 struct file_page {
-	struct file *file;  /* 이 매핑을 뒷받침하는 재오픈 파일. */
 	off_t ofs;
+	struct file *file;  /* 이 매핑을 뒷받침하는 재오픈 파일. */
 	uint32_t read_bytes;
 	uint32_t zero_bytes;
 	bool writable;

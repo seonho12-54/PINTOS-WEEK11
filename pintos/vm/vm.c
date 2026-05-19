@@ -362,15 +362,38 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 			enum vm_type target_ty = page_get_type(fp);
 
 			if (VM_TYPE(ty) == VM_UNINIT) {
-				struct lazy_load_args *aux = malloc(sizeof *aux);
-				if (!aux) {
-					free(aux);
-					return false;
+				if (target_ty == VM_FILE) {
+					struct file_page *aux = malloc(sizeof(struct file_page));
+					if (aux ==  NULL) {
+						free(aux);
+						return false;
+					}
+					struct file_page *src = (struct file_page *)fp->uninit.aux;
+					*aux = *src;
+
+					aux->file = file_reopen(src->file);
+					if (aux->file == NULL) {
+						free(aux);
+						return false;
+					}
+
+					if (!vm_alloc_page_with_initializer(target_ty, fp->va, fp->writable, file_lazy_load, aux)) {
+						file_close(aux->file);
+						free(aux);
+						return false;
+					}
 				}
-				*aux = *((struct lazy_load_args *)fp->uninit.aux);
-				if (!vm_alloc_page_with_initializer(target_ty, fp->va, fp->writable, fp->uninit.init, aux)) {
-					free(aux);
-					return false;
+				else {
+					struct lazy_load_args *aux = malloc(sizeof *aux);
+					if (!aux) {
+						free(aux);
+						return false;
+					}
+					*aux = *((struct lazy_load_args *)fp->uninit.aux);
+					if (!vm_alloc_page_with_initializer(target_ty, fp->va, fp->writable, fp->uninit.init, aux)) {
+						free(aux);
+						return false;
+					}
 				}
 			}
 			else {
@@ -380,9 +403,17 @@ supplemental_page_table_copy (struct supplemental_page_table *dst,
 						free(aux);
 						return false;
 					}
-					*aux = fp->file;
+					struct file_page src = fp->file;
+					*aux = src;
+
+					aux->file = file_reopen(src.file);
+					if (aux->file == NULL) {
+						free(aux);
+						return false;
+					}
 
 					if (!vm_alloc_page_with_initializer(ty, fp->va, fp->writable, file_lazy_load, aux)) {
+						file_close(aux->file);
 						free(aux);
 						return false;
 					}
